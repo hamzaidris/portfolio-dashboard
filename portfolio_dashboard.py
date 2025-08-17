@@ -874,7 +874,6 @@ def main():
                 st.error(f"Error: {e}")
 
     elif page == "Add Dividend":
-
         st.header("Add Dividend")
         with st.form("dividend_form"):
             ticker_options = sorted(tracker.current_prices.keys())
@@ -891,6 +890,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
