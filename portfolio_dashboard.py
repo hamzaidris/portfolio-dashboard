@@ -31,7 +31,7 @@ def fetch_psx_data():
         'MUGHAL': {'price': 64.01, 'sharia': False}
     }
     try:
-        response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
+        response = requests.get(f"https://psxterminal.com/api/{fallback_prices}", timeout=10)
         response.raise_for_status()
         try:
             response_json = response.json()
@@ -841,3 +841,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
