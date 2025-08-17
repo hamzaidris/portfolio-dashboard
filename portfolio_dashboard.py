@@ -12,7 +12,7 @@ def excel_date_to_datetime(serial):
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
-@st.cache_data(ttl=30)  # Cache for 12 hours
+@st.cache_data(ttl=43200)  # Cache for 12 hours
 def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
@@ -802,66 +802,78 @@ def main():
                 tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
             st.success("Prices updated successfully!")
 
-    
-elif page == "Add Transaction":
-        st.header("Add Transaction")
+    elif page == "Add Transaction":
+    st.header("Add Transaction")
 
-        # --- Live Prices: refresh + session state binding ---
-        colA, colB = st.columns([3,1])
-        with colA:
-            st.caption("Prices from PSX Terminal — auto refresh every 30s; click to force refresh.")
-        with colB:
-            if st.button("🔄 Refresh Prices"):
-                # Clear cache and reload prices
-                fetch_psx_data.clear()
-                tracker.current_prices = fetch_psx_data()
-                st.success("Prices refreshed.")
-                st.experimental_rerun()
+    # --- Live Prices: refresh + session state binding ---
+    colA, colB = st.columns([3,1])
+    with colA:
+        st.caption("Prices from PSX Terminal — auto refresh every 30s; click to force refresh.")
+    with colB:
+        if st.button("🔄 Refresh Prices"):
+            # Clear cache and reload prices
+            fetch_psx_data.clear()
+            tracker.current_prices = fetch_psx_data()
+            st.success("Prices refreshed.")
+            st.experimental_rerun()
 
-        # Ensure session state keys exist
-        if "selected_ticker" not in st.session_state:
-            st.session_state.selected_ticker = None
-        if "selected_price" not in st.session_state:
-            st.session_state.selected_price = 0.0
+    # Ensure session state keys exist
+    if "selected_ticker" not in st.session_state:
+        st.session_state.selected_ticker = None
+    if "selected_price" not in st.session_state:
+        st.session_state.selected_price = 0.0
 
-        def _on_ticker_change():
-            t = st.session_state.selected_ticker
-            price_obj = tracker.current_prices.get(t, {"price": 0.0})
-            st.session_state.selected_price = float(price_obj.get("price", 0.0))
+    def _on_ticker_change():
+        t = st.session_state.selected_ticker
+        price_obj = tracker.current_prices.get(t, {"price": 0.0})
+        st.session_state.selected_price = float(price_obj.get("price", 0.0))
 
-        with st.form("transaction_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                date = st.date_input("Date", value=datetime.now())
-                ticker_options = sorted(tracker.current_prices.keys())
-                # Selectbox that updates price on change
-                ticker = st.selectbox(
-                    "Ticker",
-                    ticker_options,
-                    index= ticker_options.index(st.session_state.selected_ticker) if st.session_state.selected_ticker in ticker_options else 0 if ticker_options else None,
-                    key="selected_ticker",
-                    on_change=_on_ticker_change
+    with st.form("transaction_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            date = st.date_input("Date", value=datetime.now())
+            ticker_options = sorted(tracker.current_prices.keys())
+            ticker = st.selectbox(
+                "Ticker",
+                ticker_options,
+                index=ticker_options.index(st.session_state.selected_ticker)
+                if st.session_state.selected_ticker in ticker_options else 0 if ticker_options else None,
+                key="selected_ticker",
+                on_change=_on_ticker_change
+            )
+            trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
+        with col2:
+            quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
+            default_price = tracker.current_prices.get(
+                st.session_state.selected_ticker or ticker, {'price': 0.0}
+            )['price'] if tracker.current_prices else 0.0
+            if st.session_state.selected_price == 0.0 and default_price:
+                st.session_state.selected_price = float(default_price)
+            price = st.number_input(
+                "Price",
+                min_value=0.0,
+                value=float(st.session_state.selected_price),
+                step=0.01,
+                key="price_input"
+            )
+            fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
+        submit = st.form_submit_button("Add Transaction")
+        if submit:
+            try:
+                tracker.add_transaction(
+                    date,
+                    ticker if trans_type != "Deposit" else None,
+                    trans_type,
+                    quantity,
+                    price,
+                    fee
                 )
-                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
-            with col2:
-                quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                # Price field mirrors the selected ticker's real-time price; user can override
-                default_price = tracker.current_prices.get(st.session_state.selected_ticker or ticker, {'price': 0.0})['price'] if tracker.current_prices else 0.0
-                if st.session_state.selected_price == 0.0 and default_price:
-                    st.session_state.selected_price = float(default_price)
-                price = st.number_input("Price", min_value=0.0, value=float(st.session_state.selected_price), step=0.01, key="price_input")
-                fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
-            submit = st.form_submit_button("Add Transaction")
-            if submit:
-                try:
-                    tracker.add_transaction(date, ticker if trans_type != "Deposit" else None, trans_type, quantity, price, fee)
-                    st.success("Transaction added successfully!")
-                    st.experimental_rerun()
-                except ValueError as e:
-                    st.error(f"Error: {e}")
+                st.success("Transaction added successfully!")
+                st.experimental_rerun()
+            except ValueError as e:
+                st.error(f"Error: {e}")
 
-elif page == "Add Dividend":
-
+elif page == "Add Dividend":"
         st.header("Add Dividend")
         with st.form("dividend_form"):
             ticker_options = sorted(tracker.current_prices.keys())
