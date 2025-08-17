@@ -14,9 +14,9 @@ def excel_date_to_datetime(serial):
 
 @st.cache_data(ttl=43200)  # Cache for 12 hours
 def fetch_psx_data():
-    """Fetch latest prices from PSX Terminal API but apply them to fallback tickers with fixed Sharia compliance."""
-    
-    # Fallback data (tickers + sharia compliance)
+    """Fetch prices for fallback tickers only, update their prices from API if available, keep Sharia compliance from fallback."""
+
+    # Baseline fallback tickers
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
         'GCIL': {'price': 26.70, 'sharia': True},
@@ -32,8 +32,8 @@ def fetch_psx_data():
         'MUGHAL': {'price': 64.01, 'sharia': False}
     }
 
-    # Clone fallback as base result
-    updated_data = fallback_prices.copy()
+    # Start with fallback
+    updated_data = dict(fallback_prices)
 
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
@@ -44,12 +44,12 @@ def fetch_psx_data():
             st.write(f"Market data API response: {response_json}")  # Debug log
 
             if not isinstance(response_json, dict):
-                st.error(f"Unexpected API response type: {type(response_json)}. Using fallback prices only.")
+                st.error(f"Unexpected API response type: {type(response_json)}. Using fallback only.")
                 return fallback_prices
 
             market_data = response_json.get("data", {})
 
-            # Normalize into a dictionary of {ticker: price}
+            # Preprocess API response into a {ticker: price} dict
             api_prices = {}
 
             if isinstance(market_data, dict):
@@ -59,6 +59,7 @@ def fetch_psx_data():
                             api_prices[ticker] = float(item["price"])
                         except (ValueError, TypeError):
                             st.warning(f"Invalid price for {ticker}: {item.get('price')}")
+
             elif isinstance(market_data, list):
                 for item in market_data:
                     if isinstance(item, dict):
@@ -70,22 +71,23 @@ def fetch_psx_data():
                             except (ValueError, TypeError):
                                 st.warning(f"Invalid price for {ticker}: {price}")
                     else:
-                        st.warning(f"Skipping invalid market data item: {item}")
+                        st.warning(f"Skipping invalid market data entry: {item}")
+
             else:
-                st.error(f"'data' field is not list or dict: {type(market_data)}. Using fallback prices only.")
+                st.error(f"'data' field not list/dict: {type(market_data)}. Using fallback only.")
                 return fallback_prices
 
-            # ✅ Update fallback prices with latest from API
-            for ticker in updated_data.keys():
+            # 🔑 Only update tickers from fallback_prices
+            for ticker in fallback_prices.keys():
                 if ticker in api_prices:
                     updated_data[ticker]["price"] = api_prices[ticker]
 
         except json.JSONDecodeError:
-            st.error(f"Failed to parse API response as JSON: {response.text}. Using fallback prices only.")
+            st.error(f"Failed to parse API response as JSON: {response.text}. Using fallback only.")
             return fallback_prices
 
     except requests.RequestException as e:
-        st.error(f"Error fetching market data: {e}. Using fallback prices only.")
+        st.error(f"Error fetching market data: {e}. Using fallback only.")
         return fallback_prices
 
     return updated_data
