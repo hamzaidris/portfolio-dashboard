@@ -838,54 +838,31 @@ def main():
                     st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")'''
+
+# Page selection mechanism required
+page = st.sidebar.selectbox("Go to", ["Add Dividend"])  # This must come early
+
+# Tracker must be initialized somewhere
+class Tracker:
+    def add_dividend(self, ticker, amount):
+        # ... your tracker logic here
+        pass
+
+tracker = Tracker()  # Or however you create the tracker object
+
 def fetch_all_psx_tickers():
-    url = "https://psxterminal.com/api/market-data"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        tickers = {}
-        # Ensure 'data' exists and is a dict
-        if "data" in data and isinstance(data["data"], dict):
-            for market_key, market_content in data["data"].items():
-                # Skip non-dict entries (e.g., "timestamp")
-                if not isinstance(market_content, dict):
-                    continue
-                for ticker_symbol, ticker_info in market_content.items():
-                    if isinstance(ticker_info, dict) and "price" in ticker_info:
-                        tickers[ticker_symbol] = {
-                            "price": ticker_info["price"],
-                            "market": ticker_info.get("market"),
-                            "timestamp": ticker_info.get("timestamp")
-                        }
-        return tickers
-    except requests.RequestException as e:
-        st.error(f"Error fetching PSX data: {e}")
-        return {}
+    # ... function implementation as above ...
+    pass
 
 if page == "Add Dividend":
-    st.header("Add Dividend")
+    # ... code as above ...
+    pass
 
-    # Fetch all tickers dynamically
-    all_tickers = fetch_all_psx_tickers()
-    ticker_options = sorted(all_tickers.keys())
-
-    with st.form("dividend_form"):
-        ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
-        amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
-        submit = st.form_submit_button("Add Dividend")
-
-        if submit:
-            try:
-                tracker.add_dividend(ticker, amount)
-                st.success("Dividend added successfully!")
-                st.experimental_rerun()
-            except ValueError as e:
-                st.error(f"Error: {e}")
 
 
 if __name__ == '__main__':
     main()
+
 
 
 
