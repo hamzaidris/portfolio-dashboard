@@ -14,9 +14,6 @@ def excel_date_to_datetime(serial):
 
 @st.cache_data(ttl=43200)  # Cache for 12 hours
 def fetch_psx_data():
-    """Fetch prices for fallback tickers only, update their prices from API if available, keep Sharia compliance from fallback."""
-
-    # Baseline fallback tickers
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
         'GCIL': {'price': 26.70, 'sharia': True},
@@ -32,8 +29,7 @@ def fetch_psx_data():
         'MUGHAL': {'price': 64.01, 'sharia': False}
     }
 
-    # Start with fallback
-    updated_data = dict(fallback_prices)
+    updated_data = dict(fallback_prices)  # copy fallback
 
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
@@ -41,7 +37,7 @@ def fetch_psx_data():
 
         try:
             response_json = response.json()
-            st.write(f"Market data API response: {response_json}")  # Debug log
+            st.write(f"Market data API response: {response_json}")
 
             if not isinstance(response_json, dict):
                 st.error(f"Unexpected API response type: {type(response_json)}. Using fallback only.")
@@ -49,35 +45,28 @@ def fetch_psx_data():
 
             market_data = response_json.get("data", {})
 
-            # Preprocess API response into a {ticker: price} dict
+            # market_data is dict of market => dict of ticker => details
+            # Collect prices for fallback tickers only:
             api_prices = {}
 
             if isinstance(market_data, dict):
-                for ticker, item in market_data.items():
-                    if isinstance(item, dict) and "price" in item:
-                        try:
-                            api_prices[ticker] = float(item["price"])
-                        except (ValueError, TypeError):
-                            st.warning(f"Invalid price for {ticker}: {item.get('price')}")
-
-            elif isinstance(market_data, list):
-                for item in market_data:
-                    if isinstance(item, dict):
-                        ticker = item.get("symbol")
-                        price = item.get("price")
-                        if ticker and price is not None:
-                            try:
-                                api_prices[ticker] = float(price)
-                            except (ValueError, TypeError):
-                                st.warning(f"Invalid price for {ticker}: {price}")
+                for market, tickers_dict in market_data.items():
+                    if isinstance(tickers_dict, dict):
+                        for ticker, info in tickers_dict.items():
+                            if ticker in fallback_prices and isinstance(info, dict):
+                                price = info.get("price")
+                                try:
+                                    api_prices[ticker] = float(price)
+                                except (ValueError, TypeError):
+                                    st.warning(f"Invalid price for {ticker}: {price}")
                     else:
-                        st.warning(f"Skipping invalid market data entry: {item}")
+                        st.warning(f"Unexpected tickers data for market {market}: {tickers_dict}")
 
             else:
-                st.error(f"'data' field not list/dict: {type(market_data)}. Using fallback only.")
+                st.error(f"'data' field not dict: {type(market_data)}. Using fallback only.")
                 return fallback_prices
 
-            # 🔑 Only update tickers from fallback_prices
+            # Update fallback prices with API prices where available
             for ticker in fallback_prices.keys():
                 if ticker in api_prices:
                     updated_data[ticker]["price"] = api_prices[ticker]
@@ -860,5 +849,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
