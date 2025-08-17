@@ -12,40 +12,50 @@ def excel_date_to_datetime(serial):
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
-@st.cache_data(ttl=43200)
+@st.cache_data(ttl=43200)  # Cache for 12 hours (43200 seconds)
 def fetch_psx_data():
+    """Fetch stock prices and Sharia compliance from PSX."""
     prices = {}
     # Fetch prices from market-summary
     url = "https://www.psx.com.pk/market-summary/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    tables = soup.find_all('table', class_='tbldata14')
-    for table in tables:
-        rows = table.find_all('tr')[1:]  # Skip header
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 6:
-                ticker = cols[0].text.strip()
-                current_str = cols[4].text.strip().replace(',', '')
-                try:
-                    current = float(current_str)
-                except ValueError:
-                    continue
-                prices[ticker] = {'price': current, 'sharia': False}
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        tables = soup.find_all('table', class_='tbldata14')
+        for table in tables:
+            rows = table.find_all('tr')[1:]  # Skip header
+            for row in rows:
+                cols = row.find_all('td')
+                if len(cols) >= 6:
+                    ticker = cols[0].text.strip()
+                    current_str = cols[4].text.strip().replace(',', '')
+                    try:
+                        current = float(current_str)
+                    except ValueError:
+                        continue
+                    prices[ticker] = {'price': current, 'sharia': False}
+    except requests.RequestException as e:
+        st.error(f"Error fetching prices from PSX: {e}")
+        return prices
 
     # Fetch Sharia compliant tickers from KMIALLSHR
     sharia_url = "https://dps.psx.com.pk/indices/KMIALLSHR"
-    sh_response = requests.get(sharia_url)
-    sh_soup = BeautifulSoup(sh_response.text, 'html.parser')
-    sh_table = sh_soup.find('table', class_='tbldata14')
-    if sh_table:
-        sh_rows = sh_table.find_all('tr')[1:]
-        for row in sh_rows:
-            cols = row.find_all('td')
-            if len(cols) >= 1:
-                ticker = cols[0].text.strip()
-                if ticker in prices:
-                    prices[ticker]['sharia'] = True
+    try:
+        sh_response = requests.get(sharia_url, timeout=10)
+        sh_response.raise_for_status()
+        sh_soup = BeautifulSoup(sh_response.text, 'html.parser')
+        sh_table = sh_soup.find('table', class_='tbldata14')
+        if sh_table:
+            sh_rows = sh_table.find_all('tr')[1:]
+            for row in sh_rows:
+                cols = row.find_all('td')
+                if len(cols) >= 1:
+                    ticker = cols[0].text.strip()
+                    if ticker in prices:
+                        prices[ticker]['sharia'] = True
+    except requests.RequestException as e:
+        st.error(f"Error fetching Sharia data from PSX: {e}")
     return prices
 
 class PortfolioTracker:
@@ -302,6 +312,80 @@ class PortfolioTracker:
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
 
+def initialize_tracker(tracker):
+    """Initialize tracker with transactions and dividends from Excel."""
+    # Initial deposit from Transactions sheet
+    tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
+    # Transactions from Transactions sheet
+    transactions = [
+        (45665, 'FECTC', 'Buy', 26, 84.14, 0),
+        (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
+        (45665, 'GAL', 'Buy', 8, 510.47, 6.13),
+        (45665, 'GCIL', 'Buy', 280, 25.68, 0),
+        (45665, 'GHNI', 'Buy', 4, 805, 4.83),
+        (45665, 'GLAXO', 'Buy', 6, 426, 3.83),
+        (45665, 'HALEON', 'Buy', 3, 827.99, 3.73),
+        (45665, 'MARI', 'Buy', 4, 622.27, 0),
+        (45665, 'MLCF', 'Buy', 107, 81.82, 0),
+        (45665, 'MUGHAL', 'Buy', 150, 64, 14.4),
+        (45665, 'MEBL', 'Buy', 15, 362.76, 0),
+        (45665, 'OGDC', 'Buy', 23, 234.77, 0),
+        (45755, 'FECTC', 'Buy', 164, 85.14, 0),
+        (45755, 'FFC', 'Buy', 76, 456.9, 52.09),
+        (45755, 'GAL', 'Buy', 53, 518.99, 41.26),
+        (45755, 'GCIL', 'Buy', 1766, 25.79, 0),
+        (45755, 'GHNI', 'Buy', 26, 801, 31.24),
+        (45755, 'GLAXO', 'Buy', 41, 426, 26.2),
+        (45755, 'HALEON', 'Buy', 20, 837.85, 25.14),
+        (45755, 'MARI', 'Buy', 27, 632.02, 0),
+        (45755, 'MLCF', 'Buy', 667, 83.94, 0),
+        (45755, 'MUGHAL', 'Buy', 159, 64.02, 15.24),
+        (45755, 'OGDC', 'Buy', 134, 260.7, 0),
+        (45755, 'MEBL', 'Buy', 96, 363.58, 0),
+        (45785, 'FFC', 'Buy', 14, 469.9, 9.87),
+        (45785, 'HALEON', 'Buy', 7, 836, 8.78),
+        (45785, 'OGDC', 'Buy', 25, 258.7, 0),
+        (45816, 'FFC', 'Buy', 18, 460.9, 12.45),
+        (45816, 'MEBL', 'Buy', 23, 369.16, 0),
+        (45816, 'MUGHAL', 'Sell', 309, 64.01, 29.66),
+        (45877, 'FFC', 'Sell', 10, 454.1, 6.82),
+        (45877, 'FFC', 'Sell', 19, 454.1, 12.94),
+        (45877, 'FFC', 'Sell', 30, 454.1, 20.44),
+        (45877, 'FFC', 'Sell', 2, 454.1, 1.36),
+        (45877, 'FFC', 'Sell', 59, 454.1, 40.19),
+        (45969, 'FECTC', 'Buy', 32, 88.15, 0),
+        (45969, 'GAL', 'Buy', 12, 529.99, 9.54),
+        (45969, 'GCIL', 'Buy', 300, 26.7, 0),
+        (45969, 'GHNI', 'Buy', 7, 788, 8.27),
+        (45969, 'GLAXO', 'Buy', 6, 429.99, 3.87),
+        (45969, 'HALEON', 'Buy', 5, 829, 6.22),
+        (45969, 'MEBL', 'Buy', 15, 374.98, 0),
+        (45969, 'OGDC', 'Buy', 21, 272.69, 0),
+        (45969, 'MARI', 'Buy', 9, 629.6, 0),
+        (45969, 'MLCF', 'Buy', 115, 83.48, 0)
+    ]
+    for trans in transactions:
+        try:
+            tracker.add_transaction(*trans)
+        except ValueError as e:
+            st.error(f"Error adding transaction {trans}: {e}")
+
+    # Dividends from Portfolio sheet
+    div_data = {
+        'MLCF': 8890,
+        'GCIL': 25806,
+        'MEBL': 1937,
+        'OGDC': 2842,
+        'GAL': 1095,
+        'GHNI': 592,
+        'HALEON': 630,
+        'MARI': 760,
+        'GLAXO': 1060,
+        'FECTC': 4662
+    }
+    for ticker, amount in div_data.items():
+        tracker.add_dividend(ticker, amount)
+
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
     st.title("📈 Portfolio Dashboard")
@@ -379,13 +463,14 @@ def main():
         st.header("Distribution Analysis")
         portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
-            dist_df = portfolio_df[['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %']]
+            dist_df = portfolio_df[['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'Sharia Compliant']]
             st.dataframe(
                 dist_df,
                 column_config={
                     "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                     "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%")
+                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Sharia Compliant": st.column_config.CheckboxColumn()
                 },
                 use_container_width=True
             )
@@ -406,10 +491,12 @@ def main():
                 st.write("Enter new target allocation percentages (must sum to 100%)")
                 new_allocations = {}
                 cols = st.columns(5)
-                for i, ticker in enumerate(tracker.target_allocations.keys()):
+                all_tickers = sorted(tracker.current_prices.keys())
+                for i, ticker in enumerate(all_tickers):
                     with cols[i % 5]:
+                        default = tracker.target_allocations.get(ticker, 0.0)
                         new_allocations[ticker] = st.number_input(
-                            f"{ticker} (%)", min_value=0.0, max_value=100.0, value=tracker.target_allocations[ticker], step=0.1
+                            f"{ticker} (%)", min_value=0.0, max_value=100.0, value=default, step=0.1
                         )
                 submit = st.form_submit_button("Update Allocations")
                 if submit:
@@ -441,27 +528,66 @@ def main():
         with st.form("distribute_cash_form"):
             date = st.date_input("Date", value=datetime.now())
             cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
+            sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
             submit_calc = st.form_submit_button("Calculate Distribution")
         if submit_calc:
-            dist_df = tracker.calculate_distribution(cash)
-            st.session_state.dist_df = dist_df
-            st.dataframe(
-                dist_df,
-                column_config={
-                    "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "SST": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
-            if st.button("Confirm and Execute Distribution"):
-                tracker.add_transaction(date, None, 'Deposit', cash, 0.0)
-                tracker.execute_distribution(dist_df, date)
-                st.success("Cash added and distributed successfully!")
-                st.experimental_rerun()
+            if sharia_only:
+                # Filter target allocations to Sharia-compliant stocks only
+                sharia_allocations = {
+                    ticker: alloc for ticker, alloc in tracker.target_allocations.items()
+                    if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
+                }
+                if not sharia_allocations:
+                    st.error("No Sharia-compliant stocks with positive allocations.")
+                else:
+                    # Normalize allocations to sum to 100%
+                    total_alloc = sum(sharia_allocations.values())
+                    if total_alloc == 0:
+                        st.error("Total allocation for Sharia-compliant stocks is 0.")
+                    else:
+                        normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                        temp_tracker = PortfolioTracker()
+                        temp_tracker.target_allocations = normalized_allocations
+                        temp_tracker.current_prices = tracker.current_prices
+                        dist_df = temp_tracker.calculate_distribution(cash)
+                        st.session_state.dist_df = dist_df
+                        st.dataframe(
+                            dist_df,
+                            column_config={
+                                "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                            },
+                            use_container_width=True
+                        )
+                        if st.button("Confirm and Execute Distribution"):
+                            tracker.add_transaction(date, None, 'Deposit', cash, 0.0)
+                            tracker.execute_distribution(dist_df, date)
+                            st.success("Cash added and distributed successfully!")
+                            st.experimental_rerun()
+            else:
+                dist_df = tracker.calculate_distribution(cash)
+                st.session_state.dist_df = dist_df
+                st.dataframe(
+                    dist_df,
+                    column_config={
+                        "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
+                if st.button("Confirm and Execute Distribution"):
+                    tracker.add_transaction(date, None, 'Deposit', cash, 0.0)
+                    tracker.execute_distribution(dist_df, date)
+                    st.success("Cash added and distributed successfully!")
+                    st.experimental_rerun()
 
     elif page == "Cash":
         st.header("Cash Summary")
@@ -530,11 +656,11 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 date = st.date_input("Date", value=datetime.now())
-                ticker = st.selectbox("Ticker", list(tracker.current_prices.keys()))
+                ticker = st.selectbox("Ticker", sorted(tracker.current_prices.keys()))
                 trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                price = st.number_input("Price", min_value=0.0, step=0.01)
+                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'])
                 fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
             submit = st.form_submit_button("Add Transaction")
             if submit:
@@ -548,7 +674,7 @@ def main():
     elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
-            ticker = st.selectbox("Ticker", list(tracker.current_prices.keys()))
+            ticker = st.selectbox("Ticker", sorted(tracker.current_prices.keys()))
             amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
             submit = st.form_submit_button("Add Dividend")
             if submit:
