@@ -793,29 +793,32 @@ def main():
             with col1:
                 date = st.date_input("Date", value=datetime.now())
                 ticker_options = sorted(tracker.current_prices.keys())
-                # Initialize session state for ticker if not present
+                # Initialize session state for ticker and price
                 if 'selected_ticker' not in st.session_state:
                     st.session_state.selected_ticker = ticker_options[0] if ticker_options else None
+                if 'current_price' not in st.session_state:
+                    st.session_state.current_price = tracker.current_prices.get(st.session_state.selected_ticker, {'price': 0.0})['price'] if st.session_state.selected_ticker else 0.0
                 ticker = st.selectbox(
                     "Ticker",
                     ticker_options,
                     index=ticker_options.index(st.session_state.selected_ticker) if st.session_state.selected_ticker in ticker_options else 0,
-                    key="ticker_select"
+                    key="ticker_select",
+                    help="Select a ticker to automatically fetch its current price"
                 )
                 # Update session state when ticker changes
                 if ticker != st.session_state.selected_ticker:
                     st.session_state.selected_ticker = ticker
+                    st.session_state.current_price = tracker.current_prices.get(ticker, {'price': 0.0})['price']
                 trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                # Fetch price for the selected ticker
-                default_price = tracker.current_prices.get(ticker, {'price': 0.0})['price'] if ticker else 0.0
                 price = st.number_input(
                     "Price",
                     min_value=0.0,
                     step=0.01,
-                    value=float(default_price),
-                    key=f"price_input_{ticker}"  # Unique key based on ticker to force update
+                    value=float(st.session_state.current_price),
+                    key=f"price_input_{ticker}",
+                    help="Current price fetched for the selected ticker (editable)"
                 )
                 fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
             submit = st.form_submit_button("Add Transaction")
