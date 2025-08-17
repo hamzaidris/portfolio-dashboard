@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import requests
+import json
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -15,51 +16,88 @@ def excel_date_to_datetime(serial):
 def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
-    # Fetch all symbols from /api/market-data
+    # Fallback prices for key tickers
+    fallback_prices = {
+        'MLCF': {'price': 83.48, 'sharia': True},
+        'GCIL': {'price': 26.70, 'sharia': True},
+        'MEBL': {'price': 374.98, 'sharia': True},
+        'OGDC': {'price': 272.69, 'sharia': True},
+        'GAL': {'price': 529.99, 'sharia': True},
+        'GHNI': {'price': 788.00, 'sharia': True},
+        'HALEON': {'price': 829.00, 'sharia': True},
+        'MARI': {'price': 629.60, 'sharia': True},
+        'GLAXO': {'price': 429.99, 'sharia': True},
+        'FECTC': {'price': 88.15, 'sharia': True},
+        'FFC': {'price': 454.10, 'sharia': False},
+        'MUGHAL': {'price': 64.01, 'sharia': False}
+    }
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
         response.raise_for_status()
-        response_json = response.json()
-        market_data = response_json.get("data", [])
-        if not isinstance(market_data, list):
-            market_data = []
-        for item in market_data:
-            ticker = item.get("symbol") if isinstance(item, dict) else None
-            price = item.get("price") if isinstance(item, dict) else None
-            if ticker and price is not None:
-                try:
-                    prices[ticker] = {"price": float(price), "sharia": False}
-                except (ValueError, TypeError):
+        try:
+            response_json = response.json()
+            if not isinstance(response_json, dict):
+                st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
+                return fallback_prices
+            market_data = response_json.get("data", [])
+            if not isinstance(market_data, list):
+                st.error(f"Market data 'data' field is not a list: {type(market_data)}. Using fallback prices.")
+                return fallback_prices
+            for item in market_data:
+                if not isinstance(item, dict):
+                    st.warning(f"Skipping invalid market data item: {item}")
                     continue
+                ticker = item.get("symbol")
+                price = item.get("price")
+                if ticker and price is not None:
+                    try:
+                        prices[ticker] = {"price": float(price), "sharia": False}
+                    except (ValueError, TypeError):
+                        st.warning(f"Invalid price for {ticker}: {price}")
+                        continue
+        except json.JSONDecodeError:
+            st.error(f"Failed to parse market data API response as JSON: {response.text}. Using fallback prices.")
+            return fallback_prices
     except requests.RequestException as e:
-        st.error(f"Error fetching market data from PSX Terminal: {e}")
+        st.error(f"Error fetching market data from PSX Terminal: {e}. Using fallback prices.")
+        return fallback_prices
 
     # Fetch Sharia compliance and prices from /api/yields/{SYMBOLS}
-    symbols = ",".join(prices.keys())  # Join all tickers for yields API
+    symbols = ",".join(prices.keys())
     if symbols:
         try:
             response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
             response.raise_for_status()
-            response_json = response.json()
-            yields_data = response_json.get("data", [])
-            if isinstance(yields_data, dict):
-                yields_data = [yields_data]
-            if not isinstance(yields_data, list):
-                yields_data = []
-            for item in yields_data:
-                ticker = item.get("symbol") if isinstance(item, dict) else None
-                price = item.get("price") if isinstance(item, dict) else None
-                is_non_compliant = item.get("isNonCompliant", True) if isinstance(item, dict) else True
-                if ticker and price is not None:
-                    try:
-                        prices[ticker]["price"] = float(price)
-                        prices[ticker]["sharia"] = not is_non_compliant
-                    except (ValueError, TypeError):
+            try:
+                response_json = response.json()
+                yields_data = response_json.get("data", [])
+                if isinstance(yields_data, dict):
+                    yields_data = [yields_data]
+                if not isinstance(yields_data, list):
+                    st.error(f"Yields 'data' field is not a list: {type(yields_data)}. Using fallback prices.")
+                    return prices or fallback_prices
+                for item in yields_data:
+                    if not isinstance(item, dict):
+                        st.warning(f"Skipping invalid yields data item: {item}")
                         continue
+                    ticker = item.get("symbol")
+                    price = item.get("price")
+                    is_non_compliant = item.get("isNonCompliant", True)
+                    if ticker and price is not None:
+                        try:
+                            prices[ticker]["price"] = float(price)
+                            prices[ticker]["sharia"] = not is_non_compliant
+                        except (ValueError, TypeError):
+                            st.warning(f"Invalid price for {ticker}: {price}")
+                            continue
+            except json.JSONDecodeError:
+                st.error(f"Failed to parse yields API response as JSON: {response.text}. Using fallback prices.")
+                return prices or fallback_prices
         except requests.RequestException as e:
-            st.error(f"Error fetching yields data from PSX Terminal: {e}")
+            st.error(f"Error fetching yields data from PSX Terminal: {e}. Using fallback prices.")
+            return prices or fallback_prices
 
-    return prices
+    return prices or fallback_prices
 
 class PortfolioTracker:
     def __init__(self):
@@ -70,7 +108,6 @@ class PortfolioTracker:
         self.cash = 0.0
         self.initial_cash = 0.0
         self.current_prices = fetch_psx_data()
-        # Target allocations from shariah-re-distribuation sheet
         self.target_allocations = {
             'MLCF': 18.0,
             'GCIL': 15.0,
@@ -85,22 +122,22 @@ class PortfolioTracker:
             'FFC': 0.0,
             'MUGHAL': 0.0
         }
-        self.target_investment = 410000.0  # From InvestmentPlan sheet
-        # Last dividend per share from Portfolio sheet
+        self.target_investment = 410000.0
         self.last_div_per_share = {
-            'MLCF': 10,
-            'GCIL': 11,
-            'MEBL': 13,  # Approximate from total / shares
-            'OGDC': 14,
-            'GAL': 15,
-            'GHNI': 16,
-            'HALEON': 18,
-            'MARI': 19,
-            'GLAXO': 20,
-            'FECTC': 21,
-            'FFC': 21,
-            'MUGHAL': 17
+            'MLCF': 10.0,
+            'GCIL': 11.0,
+            'MEBL': 13.0,
+            'OGDC': 14.0,
+            'GAL': 15.0,
+            'GHNI': 16.0,
+            'HALEON': 18.0,
+            'MARI': 19.0,
+            'GLAXO': 20.0,
+            'FECTC': 21.0,
+            'FFC': 21.0,
+            'MUGHAL': 17.0
         }
+        self.cash_deposits = []  # Track cash deposits for "Cash to be Invested"
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a buy, sell, or deposit transaction."""
@@ -119,6 +156,8 @@ class PortfolioTracker:
             self.cash -= cost
             if ticker not in self.holdings:
                 self.holdings[ticker] = {'shares': 0.0, 'total_cost': 0.0, 'purchase_date': date}
+            elif date < self.holdings[ticker]['purchase_date']:
+                self.holdings[ticker]['purchase_date'] = date
             self.holdings[ticker]['shares'] += quantity
             self.holdings[ticker]['total_cost'] += cost
             trans['total'] = -cost
@@ -140,6 +179,7 @@ class PortfolioTracker:
         elif trans_type == 'Deposit':
             self.cash += quantity
             self.initial_cash += quantity
+            self.cash_deposits.append({'date': date, 'amount': quantity})
             trans['total'] = quantity
             trans['realized'] = 0.0
             trans['price'] = 0.0
@@ -180,7 +220,7 @@ class PortfolioTracker:
             self.cash -= trans['total']
             self.realized_gain -= trans['realized']
             if trans['ticker'] not in self.holdings:
-                self.holdings[trans['ticker']] = {'shares': 0.0, 'total_cost': 0.0}
+                self.holdings[trans['ticker']] = {'shares': 0.0, 'total_cost': 0.0, 'purchase_date': trans['date']}
             gain = trans['realized'] + trans['fee']
             avg = trans['price'] - gain / trans['quantity'] if trans['quantity'] > 0 else 0
             self.holdings[trans['ticker']]['shares'] += trans['quantity']
@@ -188,6 +228,7 @@ class PortfolioTracker:
         elif trans['type'] == 'Deposit':
             self.cash -= trans['total']
             self.initial_cash -= trans['total']
+            self.cash_deposits = [d for d in self.cash_deposits if d['amount'] != trans['total'] or d['date'] != trans['date']]
         elif trans['type'] == 'Dividend':
             self.cash -= trans['total']
             self.dividends[trans['ticker']] -= trans['total']
@@ -195,6 +236,7 @@ class PortfolioTracker:
     def get_portfolio(self, current_prices=None):
         """Generate portfolio summary with current prices."""
         portfolio = []
+        total_invested = sum(h['total_cost'] for h in self.holdings.values() if h['shares'] > 0)
         total_portfolio_value = 0.0
         for ticker, h in self.holdings.items():
             shares = h['shares']
@@ -207,10 +249,12 @@ class PortfolioTracker:
             total_portfolio_value += market_value
             gain_loss = market_value - h['total_cost']
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
-            div = self.last_div_per_share.get(ticker, 0) * shares  # Calculate div from last_div_per_share * shares
+            # Calculate dividends since purchase date
+            div = self.last_div_per_share.get(ticker, 0) * shares if h['purchase_date'] <= datetime.now() else 0.0
             roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
             target_allocation = self.target_allocations.get(ticker, 0.0)
             sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
+            current_allocation = (h['total_cost'] / total_invested * 100) if total_invested > 0 else 0.0
             portfolio.append({
                 'Stock': ticker,
                 'Shares': shares,
@@ -223,14 +267,11 @@ class PortfolioTracker:
                 'Dividends': round(div, 2),
                 'ROI %': round(roi, 2),
                 'Target Allocation %': target_allocation,
-                'Sharia Compliant': sharia
+                'Sharia Compliant': sharia,
+                'Current Allocation %': round(current_allocation, 2),
+                'Allocation Delta %': round(current_allocation - target_allocation, 2)
             })
         portfolio_df = pd.DataFrame(portfolio)
-        portfolio_df['Current Allocation %'] = 0.0
-        portfolio_df['Allocation Delta %'] = 0.0
-        if total_portfolio_value > 0:
-            portfolio_df['Current Allocation %'] = (portfolio_df['Market Value'] / total_portfolio_value * 100).round(2)
-            portfolio_df['Allocation Delta %'] = portfolio_df['Current Allocation %'] - portfolio_df['Target Allocation %']
         return portfolio_df.sort_values(by='Market Value', ascending=False)
 
     def get_dashboard(self, current_prices=None):
@@ -238,7 +279,7 @@ class PortfolioTracker:
         portfolio_df = self.get_portfolio(current_prices)
         total_portfolio_value = portfolio_df['Market Value'].sum()
         total_unrealized = portfolio_df['Gain/Loss'].sum()
-        total_dividends = portfolio_df['Dividends'].sum()  # Use calculated dividends from portfolio_df
+        total_dividends = portfolio_df['Dividends'].sum()
         total_invested = self.initial_cash - self.cash
         total_roi = (total_portfolio_value + total_dividends) / total_invested * 100 if total_invested > 0 else 0.0
         return {
@@ -257,29 +298,6 @@ class PortfolioTracker:
         cash_flows = [t for t in self.transactions if t['type'] in ['Deposit', 'Dividend', 'Buy', 'Sell']]
         return pd.DataFrame(cash_flows)
 
-    def get_investment_plan(self):
-        """Generate investment plan with rebalancing suggestions."""
-        portfolio_df = self.get_portfolio()
-        if portfolio_df.empty:
-            return pd.DataFrame()
-        total_value = portfolio_df['Market Value'].sum() + self.cash
-        plan = []
-        for ticker, target in self.target_allocations.items():
-            current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
-            target_value = total_value * (target / 100)
-            delta_value = target_value - current_value
-            current_price = self.current_prices.get(ticker, {'price': 0.0})['price']
-            suggested_shares = delta_value / current_price if current_price > 0 else 0
-            plan.append({
-                'Stock': ticker,
-                'Target Allocation %': target,
-                'Current Value': round(current_value, 2),
-                'Target Value': round(target_value, 2),
-                'Delta Value': round(delta_value, 2),
-                'Suggested Shares': round(suggested_shares, 2)
-            })
-        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
-
     def get_invested_timeline(self):
         """Get timeline of amount invested."""
         if not self.transactions:
@@ -288,13 +306,13 @@ class PortfolioTracker:
         df['date'] = pd.to_datetime(df['date'])
         df['invested_change'] = 0.0
         df.loc[df['type'] == 'Buy', 'invested_change'] = -df['total']
-        df.loc[df['type'] == 'Sell', 'invested_change'] = df['total']  # Subtract proceeds from invested
+        df.loc[df['type'] == 'Sell', 'invested_change'] = df['total']
         df = df.groupby('date')['invested_change'].sum().cumsum().reset_index()
         df['invested'] = df['invested_change']
         return df
 
     def get_profit_loss_timeline(self):
-        """Get timeline of profit/loss (assuming current prices for simplicity, as historical prices not available)."""
+        """Get timeline of profit/loss (approximate, using current prices)."""
         if not self.transactions:
             return pd.DataFrame()
         df = pd.DataFrame(self.transactions)
@@ -306,8 +324,13 @@ class PortfolioTracker:
             invested = 0.0
             market_value = 0.0
             for ticker, h in self.holdings.items():
-                # Approximate using current price
-                market_value += h['shares'] * self.current_prices.get(ticker, {'price': 0.0})['price']
+                if h['shares'] > 0 and h['purchase_date'] <= d:
+                    market_value += h['shares'] * self.current_prices.get(ticker, {'price': 0.0})['price']
+            for _, row in past_trans.iterrows():
+                if row['type'] == 'Buy':
+                    invested += -row['total']
+                elif row['type'] == 'Sell':
+                    invested -= row['total']
             profit_loss = market_value - invested
             timeline.append({
                 'date': d,
@@ -315,12 +338,18 @@ class PortfolioTracker:
             })
         return pd.DataFrame(timeline)
 
+    def get_cash_to_invest(self):
+        """Calculate cash to be invested (previous cash + new deposits)."""
+        total_deposits = sum(d['amount'] for d in self.cash_deposits)
+        return self.cash + total_deposits
+
     def update_target_allocations(self, new_allocations):
         """Update target allocations and validate sum to 100%."""
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
             raise ValueError(f"Target allocations must sum to 100%, got {total}%")
-        self.target_allocations.update(new_allocations)
+        self.target_allocations = new_allocations  # Replace, not update, to persist changes
+        st.session_state.tracker.target_allocations = new_allocations  # Persist in session state
 
     def calculate_distribution(self, cash):
         """Calculate distribution of cash to stocks based on target allocations, with fees."""
@@ -366,12 +395,14 @@ class PortfolioTracker:
         for index, row in dist_df.iterrows():
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
+        # Clear cash_deposits after execution
+        self.cash_deposits = []
 
 def initialize_tracker(tracker):
-    """Initialize tracker with transactions and dividends from Excel."""
-    # Initial deposit from Transactions sheet
+    """Initialize tracker with transactions from Excel."""
+    # Initial deposit
     tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
-    # Transactions from Transactions sheet
+    # Transactions
     transactions = [
         (45665, 'FECTC', 'Buy', 26, 84.14, 0),
         (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
@@ -424,8 +455,6 @@ def initialize_tracker(tracker):
             tracker.add_transaction(*trans)
         except ValueError as e:
             st.error(f"Error adding transaction {trans}: {e}")
-
-    # No hardcoded dividends, as calculated in get_portfolio
 
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
@@ -526,9 +555,9 @@ def main():
             # Allocation Pie Chart
             fig_pie = px.pie(
                 portfolio_df,
-                values='Market Value',
+                values='Total Invested',  # Use Total Invested for pie chart
                 names='Stock',
-                title='Portfolio Allocation',
+                title='Portfolio Allocation (Based on Invested Amount)',
                 color_discrete_sequence=px.colors.qualitative.Plotly
             )
             st.plotly_chart(fig_pie, use_container_width=True)
@@ -580,6 +609,7 @@ def main():
                 try:
                     tracker.update_target_allocations(new_allocations)
                     st.success("Target allocations updated successfully!")
+                    st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
 
@@ -609,7 +639,6 @@ def main():
             submit_calc = st.form_submit_button("Calculate Distribution")
         if submit_calc:
             if sharia_only:
-                # Filter target allocations to Sharia-compliant stocks only
                 sharia_allocations = {
                     ticker: alloc for ticker, alloc in tracker.target_allocations.items()
                     if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
@@ -617,7 +646,6 @@ def main():
                 if not sharia_allocations:
                     st.error("No Sharia-compliant stocks with positive allocations.")
                 else:
-                    # Normalize allocations to sum to 100%
                     total_alloc = sum(sharia_allocations.values())
                     if total_alloc == 0:
                         st.error("Total allocation for Sharia-compliant stocks is 0.")
@@ -668,22 +696,57 @@ def main():
 
     elif page == "Cash":
         st.header("Cash Summary")
-        cash_df = tracker.get_cash_summary()
-        if not cash_df.empty:
-            cash_df['date'] = cash_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                cash_df,
-                column_config={
-                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
+        tabs = st.tabs(["Cash Flow", "Add Cash", "Cash to be Invested"])
+        
+        with tabs[0]:  # Cash Flow
+            cash_df = tracker.get_cash_summary()
+            if not cash_df.empty:
+                cash_df['date'] = cash_df['date'].dt.strftime('%Y-%m-%d')
+                st.dataframe(
+                    cash_df,
+                    column_config={
+                        "total": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "realized": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "price": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No cash transactions recorded.")
             st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
-        else:
-            st.info("No cash transactions recorded.")
+            dashboard = tracker.get_dashboard()
+            st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
+
+        with tabs[1]:  # Add Cash
+            with st.form("add_cash_form"):
+                date = st.date_input("Deposit Date", value=datetime.now())
+                amount = st.number_input("Deposit Amount (PKR)", min_value=0.0, step=100.0)
+                submit = st.form_submit_button("Add Cash")
+                if submit:
+                    try:
+                        tracker.add_transaction(date, None, 'Deposit', amount, 0.0)
+                        st.success("Cash deposited successfully!")
+                        st.experimental_rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
+
+        with tabs[2]:  # Cash to be Invested
+            cash_to_invest = tracker.get_cash_to_invest()
+            st.metric("Cash to be Invested", f"PKR {cash_to_invest:,.2f}")
+            deposits_df = pd.DataFrame(tracker.cash_deposits)
+            if not deposits_df.empty:
+                deposits_df['date'] = deposits_df['date'].dt.strftime('%Y-%m-%d')
+                st.dataframe(
+                    deposits_df,
+                    column_config={
+                        "amount": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No new cash deposits recorded.")
+            st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
 
     elif page == "Transactions":
         st.header("Transaction History")
@@ -738,7 +801,8 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 date = st.date_input("Date", value=datetime.now())
-                ticker = st.selectbox("Ticker", sorted(tracker.current_prices.keys()))
+                ticker_options = sorted(tracker.current_prices.keys())
+                ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
                 trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
@@ -756,7 +820,8 @@ def main():
     elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
-            ticker = st.selectbox("Ticker", sorted(tracker.current_prices.keys()))
+            ticker_options = sorted(tracker.current_prices.keys())
+            ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
             amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
             submit = st.form_submit_button("Add Dividend")
             if submit:
