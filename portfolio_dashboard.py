@@ -802,31 +802,7 @@ def main():
                 tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
             st.success("Prices updated successfully!")
 
-    '''elif page == "Add Transaction":
-        st.header("Add Transaction")
-        with st.form("transaction_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                date = st.date_input("Date", value=datetime.now())
-                ticker_options = sorted(tracker.current_prices.keys())
-                ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
-                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
-            with col2:
-                quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'])
-                fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
-            submit = st.form_submit_button("Add Transaction")
-            if submit:
-                try:
-                    tracker.add_transaction(date, ticker if trans_type != "Deposit" else None, trans_type, quantity, price, fee)
-                    st.success("Transaction added successfully!")
-                    st.experimental_rerun()
-                except ValueError as e:
-                    st.error(f"Error: {e}")'''
-    from datetime import datetime
-
-
-if page == "Add Transaction":
+    elif page == "Add Transaction":
     st.header("Add Transaction")
 
     # Get the ticker list sorted
@@ -866,6 +842,32 @@ if page == "Add Transaction":
             except ValueError as e:
                 st.error(f"Error: {e}")
 
+    '''elif page == "Add Transaction":
+        st.header("Add Transaction")
+        with st.form("transaction_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                date = st.date_input("Date", value=datetime.now())
+                ticker_options = sorted(tracker.current_prices.keys())
+                ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
+                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
+            with col2:
+                quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
+                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'])
+                fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
+            submit = st.form_submit_button("Add Transaction")
+            if submit:
+                try:
+                    tracker.add_transaction(date, ticker if trans_type != "Deposit" else None, trans_type, quantity, price, fee)
+                    st.success("Transaction added successfully!")
+                    st.experimental_rerun()
+                except ValueError as e:
+                    st.error(f"Error: {e}")'''
+    
+
+
+
+
 
     elif page == "Add Dividend":
         st.header("Add Dividend")
@@ -885,6 +887,7 @@ if page == "Add Transaction":
 
 if __name__ == '__main__':
     main()
+
 
 
 
