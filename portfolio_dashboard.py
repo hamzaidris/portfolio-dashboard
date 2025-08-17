@@ -804,7 +804,7 @@ def main():
 
     
 
-    elif page == "Add Transaction":
+    if page == "Add Transaction":
         st.header("Add Transaction")
     
         # Get the ticker list sorted
@@ -889,6 +889,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
