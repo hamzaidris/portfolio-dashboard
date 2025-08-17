@@ -29,7 +29,7 @@ def fetch_psx_data():
         'MUGHAL': {'price': 64.01, 'sharia': False}
     }
 
-    updated_data = dict(fallback_prices)  # copy fallback
+    updated_data = dict(fallback_prices)  # start with fallback
 
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
@@ -37,46 +37,38 @@ def fetch_psx_data():
 
         try:
             response_json = response.json()
-            st.write(f"Market data API response: {response_json}")
+            # Remove or comment out full response print to avoid clutter:
+            # st.write(f"Market data API response: {response_json}")
 
             if not isinstance(response_json, dict):
-                st.error(f"Unexpected API response type: {type(response_json)}. Using fallback only.")
+                st.error(f"Unexpected API response type: {type(response_json)}. Using fallback data only.")
                 return fallback_prices
 
             market_data = response_json.get("data", {})
 
-            # market_data is dict of market => dict of ticker => details
-            # Collect prices for fallback tickers only:
-            api_prices = {}
-
             if isinstance(market_data, dict):
+                # market_data keys are markets (e.g., 'REG'), values are dicts of tickers
                 for market, tickers_dict in market_data.items():
                     if isinstance(tickers_dict, dict):
                         for ticker, info in tickers_dict.items():
-                            if ticker in fallback_prices and isinstance(info, dict):
+                            if ticker in updated_data and isinstance(info, dict):
                                 price = info.get("price")
                                 try:
-                                    api_prices[ticker] = float(price)
+                                    updated_data[ticker]["price"] = float(price)
                                 except (ValueError, TypeError):
                                     st.warning(f"Invalid price for {ticker}: {price}")
                     else:
-                        st.warning(f"Unexpected tickers data for market {market}: {tickers_dict}")
-
+                        st.warning(f"Unexpected structure for market {market} data.")
             else:
-                st.error(f"'data' field not dict: {type(market_data)}. Using fallback only.")
+                st.error(f"'data' field in API response is not a dict. Using fallback data only.")
                 return fallback_prices
 
-            # Update fallback prices with API prices where available
-            for ticker in fallback_prices.keys():
-                if ticker in api_prices:
-                    updated_data[ticker]["price"] = api_prices[ticker]
-
-        except json.JSONDecodeError:
-            st.error(f"Failed to parse API response as JSON: {response.text}. Using fallback only.")
+        except Exception as e:
+            st.error(f"Error parsing market data JSON: {e}. Using fallback data only.")
             return fallback_prices
 
-    except requests.RequestException as e:
-        st.error(f"Error fetching market data: {e}. Using fallback only.")
+    except Exception as e:
+        st.error(f"Error fetching market data: {e}. Using fallback data only.")
         return fallback_prices
 
     return updated_data
@@ -849,6 +841,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
