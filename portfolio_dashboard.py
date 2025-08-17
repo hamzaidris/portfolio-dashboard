@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import requests
-import json
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -20,35 +19,20 @@ def fetch_psx_data():
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
         response.raise_for_status()
-        try:
-            response_json = response.json()
-            # Log the response for debugging
-            st.write("Market Data API Response:", response_json)  # Temporary for debugging
-            if not isinstance(response_json, dict):
-                st.error(f"Market data API returned unexpected type: {type(response_json)}. Expected dict.")
-                return prices
-            market_data = response_json.get("data", [])
-            if not isinstance(market_data, list):
-                st.error(f"Market data 'data' field is not a list: {type(market_data)}. Content: {market_data}")
-                return prices
-            for item in market_data:
-                if not isinstance(item, dict):
-                    st.warning(f"Skipping invalid market data item: {item}")
+        response_json = response.json()
+        market_data = response_json.get("data", [])
+        if not isinstance(market_data, list):
+            market_data = []
+        for item in market_data:
+            ticker = item.get("symbol") if isinstance(item, dict) else None
+            price = item.get("price") if isinstance(item, dict) else None
+            if ticker and price is not None:
+                try:
+                    prices[ticker] = {"price": float(price), "sharia": False}
+                except (ValueError, TypeError):
                     continue
-                ticker = item.get("symbol")
-                price = item.get("price")
-                if ticker and price is not None:
-                    try:
-                        prices[ticker] = {"price": float(price), "sharia": False}
-                    except (ValueError, TypeError):
-                        st.warning(f"Invalid price for {ticker}: {price}")
-                        continue
-        except json.JSONDecodeError:
-            st.error(f"Failed to parse market data API response as JSON: {response.text}")
-            return prices
     except requests.RequestException as e:
         st.error(f"Error fetching market data from PSX Terminal: {e}")
-        return prices
 
     # Fetch Sharia compliance and prices from /api/yields/{SYMBOLS}
     symbols = ",".join(prices.keys())  # Join all tickers for yields API
@@ -56,47 +40,32 @@ def fetch_psx_data():
         try:
             response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
             response.raise_for_status()
-            try:
-                response_json = response.json()
-                # Log the response for debugging
-                st.write("Yields API Response:", response_json)  # Temporary for debugging
-                if not isinstance(response_json, dict):
-                    st.error(f"Yields API returned unexpected type: {type(response_json)}. Expected dict.")
-                    return prices
-                yields_data = response_json.get("data", [])
-                if isinstance(yields_data, dict):  # Single symbol case
-                    yields_data = [yields_data]
-                if not isinstance(yields_data, list):
-                    st.error(f"Yields 'data' field is not a list: {type(yields_data)}. Content: {yields_data}")
-                    return prices
-                for item in yields_data:
-                    if not isinstance(item, dict):
-                        st.warning(f"Skipping invalid yields data item: {item}")
+            response_json = response.json()
+            yields_data = response_json.get("data", [])
+            if isinstance(yields_data, dict):
+                yields_data = [yields_data]
+            if not isinstance(yields_data, list):
+                yields_data = []
+            for item in yields_data:
+                ticker = item.get("symbol") if isinstance(item, dict) else None
+                price = item.get("price") if isinstance(item, dict) else None
+                is_non_compliant = item.get("isNonCompliant", True) if isinstance(item, dict) else True
+                if ticker and price is not None:
+                    try:
+                        prices[ticker]["price"] = float(price)
+                        prices[ticker]["sharia"] = not is_non_compliant
+                    except (ValueError, TypeError):
                         continue
-                    ticker = item.get("symbol")
-                    price = item.get("price")
-                    is_non_compliant = item.get("isNonCompliant", True)
-                    if ticker and price is not None:
-                        try:
-                            prices[ticker]["price"] = float(price)
-                            prices[ticker]["sharia"] = not is_non_compliant
-                        except (ValueError, TypeError):
-                            st.warning(f"Invalid price for {ticker}: {price}")
-                            continue
-            except json.JSONDecodeError:
-                st.error(f"Failed to parse yields API response as JSON: {response.text}")
-                return prices
         except requests.RequestException as e:
             st.error(f"Error fetching yields data from PSX Terminal: {e}")
-            return prices
 
     return prices
 
 class PortfolioTracker:
     def __init__(self):
         self.transactions = []
-        self.holdings = {}  # ticker: {'shares': float, 'total_cost': float}
-        self.dividends = {}  # ticker: total_dividends
+        self.holdings = {}  # ticker: {'shares': float, 'total_cost': float, 'purchase_date': date}
+        self.dividends = {}  # ticker: total_dividends since purchase
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
@@ -117,6 +86,21 @@ class PortfolioTracker:
             'MUGHAL': 0.0
         }
         self.target_investment = 410000.0  # From InvestmentPlan sheet
+        # Last dividend per share from Portfolio sheet
+        self.last_div_per_share = {
+            'MLCF': 10,
+            'GCIL': 11,
+            'MEBL': 13,  # Approximate from total / shares
+            'OGDC': 14,
+            'GAL': 15,
+            'GHNI': 16,
+            'HALEON': 18,
+            'MARI': 19,
+            'GLAXO': 20,
+            'FECTC': 21,
+            'FFC': 21,
+            'MUGHAL': 17
+        }
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a buy, sell, or deposit transaction."""
@@ -134,7 +118,7 @@ class PortfolioTracker:
             cost = quantity * price + fee
             self.cash -= cost
             if ticker not in self.holdings:
-                self.holdings[ticker] = {'shares': 0.0, 'total_cost': 0.0}
+                self.holdings[ticker] = {'shares': 0.0, 'total_cost': 0.0, 'purchase_date': date}
             self.holdings[ticker]['shares'] += quantity
             self.holdings[ticker]['total_cost'] += cost
             trans['total'] = -cost
@@ -223,7 +207,7 @@ class PortfolioTracker:
             total_portfolio_value += market_value
             gain_loss = market_value - h['total_cost']
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
-            div = self.dividends.get(ticker, 0.0)
+            div = self.last_div_per_share.get(ticker, 0) * shares  # Calculate div from last_div_per_share * shares
             roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
             target_allocation = self.target_allocations.get(ticker, 0.0)
             sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
@@ -242,6 +226,8 @@ class PortfolioTracker:
                 'Sharia Compliant': sharia
             })
         portfolio_df = pd.DataFrame(portfolio)
+        portfolio_df['Current Allocation %'] = 0.0
+        portfolio_df['Allocation Delta %'] = 0.0
         if total_portfolio_value > 0:
             portfolio_df['Current Allocation %'] = (portfolio_df['Market Value'] / total_portfolio_value * 100).round(2)
             portfolio_df['Allocation Delta %'] = portfolio_df['Current Allocation %'] - portfolio_df['Target Allocation %']
@@ -252,7 +238,7 @@ class PortfolioTracker:
         portfolio_df = self.get_portfolio(current_prices)
         total_portfolio_value = portfolio_df['Market Value'].sum()
         total_unrealized = portfolio_df['Gain/Loss'].sum()
-        total_dividends = sum(self.dividends.values())
+        total_dividends = portfolio_df['Dividends'].sum()  # Use calculated dividends from portfolio_df
         total_invested = self.initial_cash - self.cash
         total_roi = (total_portfolio_value + total_dividends) / total_invested * 100 if total_invested > 0 else 0.0
         return {
@@ -293,6 +279,41 @@ class PortfolioTracker:
                 'Suggested Shares': round(suggested_shares, 2)
             })
         return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
+
+    def get_invested_timeline(self):
+        """Get timeline of amount invested."""
+        if not self.transactions:
+            return pd.DataFrame()
+        df = pd.DataFrame(self.transactions)
+        df['date'] = pd.to_datetime(df['date'])
+        df['invested_change'] = 0.0
+        df.loc[df['type'] == 'Buy', 'invested_change'] = -df['total']
+        df.loc[df['type'] == 'Sell', 'invested_change'] = df['total']  # Subtract proceeds from invested
+        df = df.groupby('date')['invested_change'].sum().cumsum().reset_index()
+        df['invested'] = df['invested_change']
+        return df
+
+    def get_profit_loss_timeline(self):
+        """Get timeline of profit/loss (assuming current prices for simplicity, as historical prices not available)."""
+        if not self.transactions:
+            return pd.DataFrame()
+        df = pd.DataFrame(self.transactions)
+        df['date'] = pd.to_datetime(df['date'])
+        dates = pd.date_range(start=df['date'].min(), end=datetime.today(), freq='D')
+        timeline = []
+        for d in dates:
+            past_trans = df[df['date'] <= d]
+            invested = 0.0
+            market_value = 0.0
+            for ticker, h in self.holdings.items():
+                # Approximate using current price
+                market_value += h['shares'] * self.current_prices.get(ticker, {'price': 0.0})['price']
+            profit_loss = market_value - invested
+            timeline.append({
+                'date': d,
+                'profit_loss': profit_loss
+            })
+        return pd.DataFrame(timeline)
 
     def update_target_allocations(self, new_allocations):
         """Update target allocations and validate sum to 100%."""
@@ -404,21 +425,7 @@ def initialize_tracker(tracker):
         except ValueError as e:
             st.error(f"Error adding transaction {trans}: {e}")
 
-    # Dividends from Portfolio sheet
-    div_data = {
-        'MLCF': 8890,
-        'GCIL': 25806,
-        'MEBL': 1937,
-        'OGDC': 2842,
-        'GAL': 1095,
-        'GHNI': 592,
-        'HALEON': 630,
-        'MARI': 760,
-        'GLAXO': 1060,
-        'FECTC': 4662
-    }
-    for ticker, amount in div_data.items():
-        tracker.add_dividend(ticker, amount)
+    # No hardcoded dividends, as calculated in get_portfolio
 
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
@@ -442,7 +449,7 @@ def main():
         col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
         col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
         col3.metric("Total Dividends", f"PKR {dashboard['Total Dividends']:,.2f}")
-        col4.metric("Cash Balance", f"PKR {tracker.cash:,.2f}")  # Fixed: Use tracker.cash
+        col4.metric("Cash Balance", f"PKR {tracker.cash:,.2f}")
         col1.metric("Total Invested", f"PKR {dashboard['Total Invested']:,.2f}")
         col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
         col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
@@ -460,6 +467,41 @@ def main():
                 color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
             )
             st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Current vs Target Allocation Chart
+            fig_alloc = px.bar(
+                portfolio_df,
+                x='Stock',
+                y=['Current Allocation %', 'Target Allocation %'],
+                title='Current vs Target Allocation',
+                barmode='group',
+                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+            )
+            st.plotly_chart(fig_alloc, use_container_width=True)
+
+        # Timeline Chart of Amount Invested
+        invested_df = tracker.get_invested_timeline()
+        if not invested_df.empty:
+            fig_invested = px.line(
+                invested_df,
+                x='date',
+                y='invested',
+                title='Amount Invested Over Time'
+            )
+            st.plotly_chart(fig_invested, use_container_width=True)
+
+        # Timeline Chart of Profit/Loss
+        pl_df = tracker.get_profit_loss_timeline()
+        if not pl_df.empty:
+            fig_pl = px.line(
+                pl_df,
+                x='date',
+                y='profit_loss',
+                title='Profit/Loss Over Time (Approximate)'
+            )
+            st.plotly_chart(fig_pl, use_container_width=True)
+        else:
+            st.info("Historical profit/loss data not available.")
 
     elif page == "Portfolio":
         st.header("Portfolio Summary")
@@ -496,49 +538,50 @@ def main():
     elif page == "Distribution":
         st.header("Distribution Analysis")
         portfolio_df = tracker.get_portfolio()
+        dist_df = pd.DataFrame(columns=['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'Sharia Compliant'])
         if not portfolio_df.empty:
             dist_df = portfolio_df[['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'Sharia Compliant']]
-            st.dataframe(
-                dist_df,
-                column_config={
-                    "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Sharia Compliant": st.column_config.CheckboxColumn()
-                },
-                use_container_width=True
-            )
-            # Bar Chart for Allocation Comparison
-            fig_dist = px.bar(
-                dist_df,
-                x='Stock',
-                y=['Current Allocation %', 'Target Allocation %'],
-                title='Current vs Target Allocation',
-                barmode='group',
-                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
-            )
-            st.plotly_chart(fig_dist, use_container_width=True)
+        st.dataframe(
+            dist_df,
+            column_config={
+                "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
+                "Sharia Compliant": st.column_config.CheckboxColumn()
+            },
+            use_container_width=True
+        )
+        # Bar Chart for Allocation Comparison
+        fig_dist = px.bar(
+            dist_df,
+            x='Stock',
+            y=['Current Allocation %', 'Target Allocation %'],
+            title='Current vs Target Allocation',
+            barmode='group',
+            color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+        )
+        st.plotly_chart(fig_dist, use_container_width=True)
 
-            # Edit Target Allocations
-            st.subheader("Edit Target Allocations")
-            with st.form("edit_allocations_form"):
-                st.write("Enter new target allocation percentages (must sum to 100%)")
-                new_allocations = {}
-                cols = st.columns(5)
-                all_tickers = sorted(tracker.current_prices.keys())
-                for i, ticker in enumerate(all_tickers):
-                    with cols[i % 5]:
-                        default = tracker.target_allocations.get(ticker, 0.0)
-                        new_allocations[ticker] = st.number_input(
-                            f"{ticker} (%)", min_value=0.0, max_value=100.0, value=default, step=0.1
-                        )
-                submit = st.form_submit_button("Update Allocations")
-                if submit:
-                    try:
-                        tracker.update_target_allocations(new_allocations)
-                        st.success("Target allocations updated successfully!")
-                    except ValueError as e:
-                        st.error(f"Error: {e}")
+        # Edit Target Allocations
+        st.subheader("Edit Target Allocations")
+        with st.form("edit_allocations_form"):
+            st.write("Enter new target allocation percentages (must sum to 100%)")
+            new_allocations = {}
+            cols = st.columns(5)
+            all_tickers = sorted(tracker.current_prices.keys())
+            for i, ticker in enumerate(all_tickers):
+                with cols[i % 5]:
+                    default = tracker.target_allocations.get(ticker, 0.0)
+                    new_allocations[ticker] = st.number_input(
+                        f"{ticker} (%)", min_value=0.0, max_value=100.0, value=default, step=0.1
+                    )
+            submit = st.form_submit_button("Update Allocations")
+            if submit:
+                try:
+                    tracker.update_target_allocations(new_allocations)
+                    st.success("Target allocations updated successfully!")
+                except ValueError as e:
+                    st.error(f"Error: {e}")
 
     elif page == "Investment Plan":
         st.header("Investment Plan")
@@ -647,15 +690,20 @@ def main():
         if tracker.transactions:
             trans_df = pd.DataFrame(tracker.transactions)
             trans_df['date'] = trans_df['date'].dt.strftime('%Y-%m-%d')
-            st.subheader("Transactions")
-            selected = []
-            for i, row in trans_df.iterrows():
-                cols = st.columns([1, 8])
-                with cols[0]:
-                    if st.checkbox(f"Delete {i}", key=f"delete_{i}"):
-                        selected.append(i)
-                with cols[1]:
-                    st.write(f"{row['date']} | {row['type']} | {row['ticker']} | Qty: {row['quantity']} | Price: PKR {row['price']:.2f} | Fee: PKR {row['fee']:.2f} | Total: PKR {row['total']:.2f}")
+            trans_df['Select'] = False
+            edited_df = st.data_editor(
+                trans_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(),
+                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                },
+                use_container_width=True,
+                hide_index=False
+            )
+            selected = edited_df[edited_df['Select']].index.tolist()
             if st.button("Delete Selected Transactions"):
                 try:
                     for index in sorted(selected, reverse=True):
