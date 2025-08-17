@@ -823,9 +823,8 @@ def main():
                     st.success("Transaction added successfully!")
                     st.experimental_rerun()
                 except ValueError as e:
-                    st.error(f"Error: {e
+                    st.error(f"Error: {e}")
     
-
 
     elif page == "Add Dividend":
         st.header("Add Dividend")
@@ -845,6 +844,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
