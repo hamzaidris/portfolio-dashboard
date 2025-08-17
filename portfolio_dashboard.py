@@ -824,7 +824,7 @@ def main():
                 except ValueError as e:
                     st.error(f"Error: {e}")
 
-    elif page == "Add Dividend":
+    '''elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
             ticker_options = sorted(tracker.current_prices.keys())
@@ -837,10 +837,49 @@ def main():
                     st.success("Dividend added successfully!")
                     st.experimental_rerun()
                 except ValueError as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error: {e}")'''
+    import requests
+
+def fetch_all_psx_tickers():
+    url = "https://psxterminal.com/api/market-data"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        tickers = {}
+
+        # Check data exists and is dict
+        if "data" in data and isinstance(data["data"], dict):
+            for market_key, market_content in data["data"].items():
+                # Skip if market content is not dict (e.g., skip timestamps)
+                if not isinstance(market_content, dict):
+                    continue
+                for ticker_symbol, ticker_info in market_content.items():
+                    if isinstance(ticker_info, dict) and "price" in ticker_info:
+                        tickers[ticker_symbol] = {
+                            "price": ticker_info["price"],
+                            "market": ticker_info.get("market"),
+                            "timestamp": ticker_info.get("timestamp")
+                        }
+
+        return tickers
+
+    except requests.RequestException as e:
+        print(f"Error fetching PSX data: {e}")
+        return {}
+
+# Example usage:
+all_tickers = fetch_all_psx_tickers()
+print(f"Total tickers fetched: {len(all_tickers)}")
+print("Sample tickers:")
+for ticker, info in list(all_tickers.items())[:10]:
+    print(f"{ticker}: Price={info['price']}, Market={info['market']}")
+
 
 if __name__ == '__main__':
     main()
+
 
 
 
