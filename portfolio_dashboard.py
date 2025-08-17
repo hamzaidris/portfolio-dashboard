@@ -873,7 +873,7 @@ def main():
             except ValueError as e:
                 st.error(f"Error: {e}")
 
-    elif page == "Add Dividend":
+    '''elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
             ticker_options = sorted(tracker.current_prices.keys())
@@ -886,10 +886,11 @@ def main():
                     st.success("Dividend added successfully!")
                     st.experimental_rerun()
                 except ValueError as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error: {e}")'''
 
 if __name__ == '__main__':
     main()
+
 
 
 
