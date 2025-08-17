@@ -16,7 +16,6 @@ def excel_date_to_datetime(serial):
 def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
-    # Fallback prices for key tickers
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
         'GCIL': {'price': 26.70, 'sharia': True},
@@ -36,25 +35,37 @@ def fetch_psx_data():
         response.raise_for_status()
         try:
             response_json = response.json()
+            st.write(f"Market data API response: {response_json}")  # Log for debugging
             if not isinstance(response_json, dict):
                 st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
                 return fallback_prices
             market_data = response_json.get("data", [])
-            if not isinstance(market_data, list):
-                st.error(f"Market data 'data' field is not a list: {type(market_data)}. Using fallback prices.")
-                return fallback_prices
-            for item in market_data:
-                if not isinstance(item, dict):
-                    st.warning(f"Skipping invalid market data item: {item}")
-                    continue
-                ticker = item.get("symbol")
-                price = item.get("price")
-                if ticker and price is not None:
-                    try:
-                        prices[ticker] = {"price": float(price), "sharia": False}
-                    except (ValueError, TypeError):
-                        st.warning(f"Invalid price for {ticker}: {price}")
+            # Handle dictionary case
+            if isinstance(market_data, dict):
+                for ticker, item in market_data.items():
+                    price = item.get("price") if isinstance(item, dict) else None
+                    if ticker and price is not None:
+                        try:
+                            prices[ticker] = {"price": float(price), "sharia": False}
+                        except (ValueError, TypeError):
+                            st.warning(f"Invalid price for {ticker}: {price}")
+                            continue
+            elif isinstance(market_data, list):
+                for item in market_data:
+                    if not isinstance(item, dict):
+                        st.warning(f"Skipping invalid market data item: {item}")
                         continue
+                    ticker = item.get("symbol")
+                    price = item.get("price")
+                    if ticker and price is not None:
+                        try:
+                            prices[ticker] = {"price": float(price), "sharia": False}
+                        except (ValueError, TypeError):
+                            st.warning(f"Invalid price for {ticker}: {price}")
+                            continue
+            else:
+                st.error(f"Market data 'data' field is not a list or dict: {type(market_data)}. Using fallback prices.")
+                return fallback_prices
         except json.JSONDecodeError:
             st.error(f"Failed to parse market data API response as JSON: {response.text}. Using fallback prices.")
             return fallback_prices
@@ -69,6 +80,7 @@ def fetch_psx_data():
             response.raise_for_status()
             try:
                 response_json = response.json()
+                st.write(f"Yields API response: {response_json}")  # Log for debugging
                 yields_data = response_json.get("data", [])
                 if isinstance(yields_data, dict):
                     yields_data = [yields_data]
@@ -332,6 +344,29 @@ class PortfolioTracker:
         total_deposits = sum(d['amount'] for d in self.cash_deposits)
         return self.cash + total_deposits
 
+    def get_investment_plan(self):
+        """Generate investment plan with rebalancing suggestions."""
+        portfolio_df = self.get_portfolio()
+        if portfolio_df.empty:
+            return pd.DataFrame()
+        total_value = portfolio_df['Market Value'].sum() + self.cash
+        plan = []
+        for ticker, target in self.target_allocations.items():
+            current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
+            target_value = total_value * (target / 100)
+            delta_value = target_value - current_value
+            current_price = self.current_prices.get(ticker, {'price': 0.0})['price']
+            suggested_shares = delta_value / current_price if current_price > 0 else 0
+            plan.append({
+                'Stock': ticker,
+                'Target Allocation %': target,
+                'Current Value': round(current_value, 2),
+                'Target Value': round(target_value, 2),
+                'Delta Value': round(delta_value, 2),
+                'Suggested Shares': round(suggested_shares, 2)
+            })
+        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
+
     def update_target_allocations(self, new_allocations):
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
@@ -384,7 +419,6 @@ class PortfolioTracker:
         self.cash_deposits = []
 
 def initialize_tracker(tracker):
-    """Initialize tracker with transactions from Excel."""
     tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
     transactions = [
         (45665, 'FECTC', 'Buy', 26, 84.14, 0),
