@@ -13,8 +13,6 @@ def excel_date_to_datetime(serial):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
 @st.cache_data(ttl=43200)  # Cache for 12 hours
-import requests
-import streamlit as st
 
 def fetch_psx_data():
     fallback_prices = {
@@ -69,6 +67,12 @@ def fetch_psx_data():
         except Exception as e:
             st.error(f"Error parsing market data JSON: {e}. Using fallback data only.")
             return fallback_prices
+
+    except Exception as e:
+        st.error(f"Error fetching market data: {e}. Using fallback data only.")
+        return fallback_prices
+
+    return updated_data
 
     except Exception as e:
         st.error(f"Error fetching market data: {e}. Using fallback data only.")
@@ -845,6 +849,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
