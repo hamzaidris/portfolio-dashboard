@@ -12,7 +12,7 @@ def excel_date_to_datetime(serial):
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
-@st.cache_data(ttl=43200)  # Cache for 12 hours
+@st.cache_data(ttl=43200) # Cache for 12 hours
 def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
@@ -35,12 +35,10 @@ def fetch_psx_data():
         response.raise_for_status()
         try:
             response_json = response.json()
-            #st.write(f"Market data API response: {response_json}")  # Log for debugging
             if not isinstance(response_json, dict):
                 st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
                 return fallback_prices
             market_data = response_json.get("data", [])
-            # Handle dictionary case
             if isinstance(market_data, dict):
                 for ticker, item in market_data.items():
                     price = item.get("price") if isinstance(item, dict) else None
@@ -72,7 +70,7 @@ def fetch_psx_data():
     except requests.RequestException as e:
         st.error(f"Error fetching market data from PSX Terminal: {e}. Using fallback prices.")
         return fallback_prices
-        
+    
     symbols = ",".join(prices.keys())
     if symbols:
         try:
@@ -80,7 +78,6 @@ def fetch_psx_data():
             response.raise_for_status()
             try:
                 response_json = response.json()
-                st.write(f"Yields API response: {response_json}")  # Log for debugging
                 yields_data = response_json.get("data", [])
                 if isinstance(yields_data, dict):
                     yields_data = [yields_data]
@@ -107,14 +104,13 @@ def fetch_psx_data():
         except requests.RequestException as e:
             st.error(f"Error fetching yields data from PSX Terminal: {e}. Using fallback prices.")
             return prices or fallback_prices
-
     return prices or fallback_prices
 
 class PortfolioTracker:
     def __init__(self):
         self.transactions = []
-        self.holdings = {}  # ticker: {'shares': float, 'total_cost': float, 'purchase_date': date}
-        self.dividends = {}  # ticker: total_dividends since purchase
+        self.holdings = {} # ticker: {'shares': float, 'total_cost': float, 'purchase_date': date}
+        self.dividends = {} # ticker: total_dividends since purchase
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
@@ -476,16 +472,13 @@ def initialize_tracker(tracker):
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
     st.title("📈 Portfolio Dashboard")
-
     if 'tracker' not in st.session_state:
         st.session_state.tracker = PortfolioTracker()
         initialize_tracker(st.session_state.tracker)
-
     tracker = st.session_state.tracker
-
     st.sidebar.header("Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
-
+    
     if page == "Dashboard":
         st.header("Dashboard")
         dashboard = tracker.get_dashboard()
@@ -498,7 +491,6 @@ def main():
         col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
         col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
         col4.metric("% of Target Invested", f"{dashboard['% of Target Invested']:.2f}%")
-
         portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
             fig_bar = px.bar(
@@ -510,7 +502,6 @@ def main():
                 color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
             )
             st.plotly_chart(fig_bar, use_container_width=True)
-
             fig_alloc = px.bar(
                 portfolio_df,
                 x='Stock',
@@ -520,7 +511,6 @@ def main():
                 color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
             )
             st.plotly_chart(fig_alloc, use_container_width=True)
-
         invested_df = tracker.get_invested_timeline()
         if not invested_df.empty:
             fig_invested = px.line(
@@ -530,7 +520,6 @@ def main():
                 title='Amount Invested Over Time'
             )
             st.plotly_chart(fig_invested, use_container_width=True)
-
         pl_df = tracker.get_profit_loss_timeline()
         if not pl_df.empty:
             fig_pl = px.line(
@@ -542,7 +531,7 @@ def main():
             st.plotly_chart(fig_pl, use_container_width=True)
         else:
             st.info("Historical profit/loss data not available.")
-
+    
     elif page == "Portfolio":
         st.header("Portfolio Summary")
         portfolio_df = tracker.get_portfolio()
@@ -573,7 +562,7 @@ def main():
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("No holdings in portfolio.")
-
+    
     elif page == "Distribution":
         st.header("Distribution Analysis")
         portfolio_df = tracker.get_portfolio()
@@ -599,7 +588,6 @@ def main():
             color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
         )
         st.plotly_chart(fig_dist, use_container_width=True)
-
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
             st.write("Enter new target allocation percentages (must sum to 100%)")
@@ -620,7 +608,7 @@ def main():
                     st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
-
+    
     elif page == "Investment Plan":
         st.header("Investment Plan")
         plan_df = tracker.get_investment_plan()
@@ -637,7 +625,6 @@ def main():
                 use_container_width=True
             )
             st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
-
         st.subheader("Add and Distribute Cash")
         with st.form("distribute_cash_form"):
             date = st.date_input("Date", value=datetime.now())
@@ -700,11 +687,10 @@ def main():
                     tracker.execute_distribution(dist_df, date)
                     st.success("Cash added and distributed successfully!")
                     st.experimental_rerun()
-
+    
     elif page == "Cash":
         st.header("Cash Summary")
         tabs = st.tabs(["Cash Flow", "Add Cash", "Cash to be Invested"])
-
         with tabs[0]:
             cash_df = tracker.get_cash_summary()
             if not cash_df.empty:
@@ -724,7 +710,6 @@ def main():
             st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
             dashboard = tracker.get_dashboard()
             st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
-
         with tabs[1]:
             with st.form("add_cash_form"):
                 date = st.date_input("Deposit Date", value=datetime.now())
@@ -737,7 +722,6 @@ def main():
                         st.experimental_rerun()
                     except ValueError as e:
                         st.error(f"Error: {e}")
-
         with tabs[2]:
             cash_to_invest = tracker.get_cash_to_invest()
             st.metric("Cash to be Invested", f"PKR {cash_to_invest:,.2f}")
@@ -754,7 +738,7 @@ def main():
             else:
                 st.info("No new cash deposits recorded.")
             st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
-
+    
     elif page == "Transactions":
         st.header("Transaction History")
         if tracker.transactions:
@@ -784,7 +768,7 @@ def main():
                     st.error(f"Error: {e}")
         else:
             st.info("No transactions recorded.")
-
+    
     elif page == "Current Prices":
         st.header("Current Prices")
         if st.button("Fetch Latest PSX Data"):
@@ -801,8 +785,7 @@ def main():
                 sharia = row['Sharia Compliant']
                 tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
             st.success("Prices updated successfully!")
-
-   
+    
     elif page == "Add Transaction":
         st.header("Add Transaction")
         with st.form("transaction_form"):
@@ -810,11 +793,30 @@ def main():
             with col1:
                 date = st.date_input("Date", value=datetime.now())
                 ticker_options = sorted(tracker.current_prices.keys())
-                ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
+                # Initialize session state for ticker if not present
+                if 'selected_ticker' not in st.session_state:
+                    st.session_state.selected_ticker = ticker_options[0] if ticker_options else None
+                ticker = st.selectbox(
+                    "Ticker",
+                    ticker_options,
+                    index=ticker_options.index(st.session_state.selected_ticker) if st.session_state.selected_ticker in ticker_options else 0,
+                    key="ticker_select"
+                )
+                # Update session state when ticker changes
+                if ticker != st.session_state.selected_ticker:
+                    st.session_state.selected_ticker = ticker
                 trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'])
+                # Fetch price for the selected ticker
+                default_price = tracker.current_prices.get(ticker, {'price': 0.0})['price'] if ticker else 0.0
+                price = st.number_input(
+                    "Price",
+                    min_value=0.0,
+                    step=0.01,
+                    value=float(default_price),
+                    key=f"price_input_{ticker}"  # Unique key based on ticker to force update
+                )
                 fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
             submit = st.form_submit_button("Add Transaction")
             if submit:
@@ -825,7 +827,6 @@ def main():
                 except ValueError as e:
                     st.error(f"Error: {e}")
     
-
     elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
@@ -840,28 +841,6 @@ def main():
                     st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
-#market_data
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
