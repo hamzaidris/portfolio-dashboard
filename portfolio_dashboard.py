@@ -32,6 +32,19 @@ class PortfolioTracker:
             'GLAXO': 425.6,
             'FECTC': 84.61
         }
+        # Target allocations from Investment Plan sheet
+        self.target_allocations = {
+            'MLCF': 18.0,
+            'GCIL': 15.0,
+            'MEBL': 12.0,
+            'OGDC': 12.0,
+            'GAL': 10.0,
+            'GHNI': 8.0,
+            'HALEON': 8.0,
+            'MARI': 7.0,
+            'GLAXO': 6.0,
+            'FECTC': 4.0
+        }
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a buy, sell, or deposit transaction."""
@@ -69,8 +82,8 @@ class PortfolioTracker:
             trans['total'] = net
             trans['realized'] = gain - fee
         elif trans_type == 'Deposit':
-            self.cash += quantity  # quantity as amount
-            self.initial_cash += quantity  # track total deposits
+            self.cash += quantity
+            self.initial_cash += quantity
             trans['total'] = quantity
             trans['realized'] = 0.0
             trans['price'] = 0.0
@@ -84,7 +97,17 @@ class PortfolioTracker:
         if ticker not in self.dividends:
             self.dividends[ticker] = 0.0
         self.dividends[ticker] += amount
-        self.cash += amount  # assume dividend adds to cash
+        self.cash += amount
+        self.transactions.append({
+            'date': datetime.now(),
+            'ticker': ticker,
+            'type': 'Dividend',
+            'quantity': 0,
+            'price': 0.0,
+            'fee': 0.0,
+            'total': amount,
+            'realized': 0.0
+        })
 
     def get_portfolio(self, current_prices=None):
         """Generate portfolio summary with current prices."""
@@ -105,6 +128,7 @@ class PortfolioTracker:
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
             div = self.dividends.get(ticker, 0.0)
             roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
+            target_allocation = self.target_allocations.get(ticker, 0.0)
             portfolio.append({
                 'Stock': ticker,
                 'Shares': shares,
@@ -115,11 +139,13 @@ class PortfolioTracker:
                 'Gain/Loss': round(gain_loss, 2),
                 '% Gain': round(per_gain * 100, 2),
                 'Dividends': round(div, 2),
-                'ROI %': round(roi, 2)
+                'ROI %': round(roi, 2),
+                'Target Allocation %': target_allocation
             })
         portfolio_df = pd.DataFrame(portfolio)
         if total_portfolio_value > 0:
-            portfolio_df['Allocation %'] = (portfolio_df['Market Value'] / total_portfolio_value * 100).round(2)
+            portfolio_df['Current Allocation %'] = (portfolio_df['Market Value'] / total_portfolio_value * 100).round(2)
+            portfolio_df['Allocation Delta %'] = portfolio_df['Current Allocation %'] - portfolio_df['Target Allocation %']
         return portfolio_df.sort_values(by='Market Value', ascending=False)
 
     def get_dashboard(self, current_prices=None):
@@ -139,6 +165,34 @@ class PortfolioTracker:
             'Total ROI %': round(total_roi, 2),
             'Cash Balance': round(self.cash, 2)
         }
+
+    def get_cash_summary(self):
+        """Generate cash flow summary from transactions."""
+        cash_flows = [t for t in self.transactions if t['type'] in ['Deposit', 'Dividend', 'Buy', 'Sell']]
+        return pd.DataFrame(cash_flows)
+
+    def get_investment_plan(self):
+        """Generate investment plan with rebalancing suggestions."""
+        portfolio_df = self.get_portfolio()
+        if portfolio_df.empty:
+            return pd.DataFrame()
+        total_value = portfolio_df['Market Value'].sum() + self.cash
+        plan = []
+        for ticker, target in self.target_allocations.items():
+            current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
+            target_value = total_value * (target / 100)
+            delta_value = target_value - current_value
+            current_price = self.current_prices.get(ticker, 0.0)
+            suggested_shares = delta_value / current_price if current_price > 0 else 0
+            plan.append({
+                'Stock': ticker,
+                'Target Allocation %': target,
+                'Current Value': round(current_value, 2),
+                'Target Value': round(target_value, 2),
+                'Delta Value': round(delta_value, 2),
+                'Suggested Shares': round(suggested_shares, 2)
+            })
+        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
 
 def initialize_tracker(tracker):
     """Initialize tracker with transactions and dividends from Excel."""
@@ -224,21 +278,37 @@ def main():
 
     # Sidebar for navigation
     st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Portfolio", "Add Transaction", "Add Dividend", "Transactions"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Add Transaction", "Add Dividend"])
 
-    if page == "Portfolio":
+    if page == "Dashboard":
+        st.header("Dashboard")
+        dashboard = tracker.get_dashboard()
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
+        col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
+        col3.metric("Total Dividends", f"PKR {dashboard['Total Dividends']:,.2f}")
+        col4.metric("Cash Balance", f"PKR {dashboard['Cash Balance']:,.2f}")
+        col1.metric("Total Invested", f"PKR {dashboard['Total Invested']:,.2f}")
+        col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
+        col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
+        
+        # Portfolio Value Bar Chart
+        portfolio_df = tracker.get_portfolio()
+        if not portfolio_df.empty:
+            fig_bar = px.bar(
+                portfolio_df,
+                x='Stock',
+                y=['Market Value', 'Gain/Loss'],
+                title='Portfolio Value and Gains/Losses by Stock',
+                barmode='group',
+                color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+    elif page == "Portfolio":
         st.header("Portfolio Summary")
         portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
-            # Display metrics
-            dashboard = tracker.get_dashboard()
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
-            col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
-            col3.metric("Total Dividends", f"PKR {dashboard['Total Dividends']:,.2f}")
-            col4.metric("Cash Balance", f"PKR {dashboard['Cash Balance']:,.2f}")
-
-            # Portfolio table
             st.dataframe(
                 portfolio_df,
                 column_config={
@@ -248,22 +318,106 @@ def main():
                     "Dividends": st.column_config.NumberColumn(format="PKR %.2f"),
                     "% Gain": st.column_config.NumberColumn(format="%.2f%"),
                     "ROI %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Allocation %": st.column_config.NumberColumn(format="%.2f%")
+                    "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%")
                 },
                 use_container_width=True
             )
-
-            # Allocation pie chart
-            fig = px.pie(
+            # Allocation Pie Chart
+            fig_pie = px.pie(
                 portfolio_df,
                 values='Market Value',
                 names='Stock',
                 title='Portfolio Allocation',
                 color_discrete_sequence=px.colors.qualitative.Plotly
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("No holdings in portfolio.")
+
+    elif page == "Distribution":
+        st.header("Distribution Analysis")
+        portfolio_df = tracker.get_portfolio()
+        if not portfolio_df.empty:
+            dist_df = portfolio_df[['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %']]
+            st.dataframe(
+                dist_df,
+                column_config={
+                    "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%")
+                },
+                use_container_width=True
+            )
+            # Bar Chart for Allocation Comparison
+            fig_dist = px.bar(
+                dist_df,
+                x='Stock',
+                y=['Current Allocation %', 'Target Allocation %'],
+                title='Current vs Target Allocation',
+                barmode='group',
+                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+            )
+            st.plotly_chart(fig_dist, use_container_width=True)
+        else:
+            st.info("No holdings to analyze.")
+
+    elif page == "Investment Plan":
+        st.header("Investment Plan")
+        plan_df = tracker.get_investment_plan()
+        if not plan_df.empty:
+            st.dataframe(
+                plan_df,
+                column_config={
+                    "Current Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Target Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Delta Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Suggested Shares": st.column_config.NumberColumn(format="%.2f")
+                },
+                use_container_width=True
+            )
+            st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
+        else:
+            st.info("No investment plan available.")
+
+    elif page == "Cash":
+        st.header("Cash Summary")
+        cash_df = tracker.get_cash_summary()
+        if not cash_df.empty:
+            cash_df['date'] = cash_df['date'].dt.strftime('%Y-%m-%d')
+            st.dataframe(
+                cash_df,
+                column_config={
+                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                },
+                use_container_width=True
+            )
+            st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
+        else:
+            st.info("No cash transactions recorded.")
+
+    elif page == "Transactions":
+        st.header("Transaction History")
+        if tracker.transactions:
+            trans_df = pd.DataFrame(tracker.transactions)
+            trans_df['date'] = trans_df['date'].dt.strftime('%Y-%m-%d')
+            st.dataframe(
+                trans_df,
+                column_config={
+                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                },
+                use_container_width=True
+            )
+        else:
+            st.info("No transactions recorded.")
 
     elif page == "Add Transaction":
         st.header("Add Transaction")
@@ -297,24 +451,6 @@ def main():
                     st.success("Dividend added successfully!")
                 except ValueError as e:
                     st.error(f"Error: {e}")
-
-    elif page == "Transactions":
-        st.header("Transaction History")
-        if tracker.transactions:
-            trans_df = pd.DataFrame(tracker.transactions)
-            trans_df['date'] = trans_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                trans_df,
-                column_config={
-                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
-        else:
-            st.info("No transactions recorded.")
 
 if __name__ == '__main__':
     main()
