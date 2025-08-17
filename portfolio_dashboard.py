@@ -12,9 +12,9 @@ def excel_date_to_datetime(serial):
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
-@st.cache_data(ttl=43200)  # Cache for 12 hours
+@st.cache_data(ttl=60)  # Cache for 1 minute during testing
 def fetch_psx_data():
-    """Fetch stock prices and Sharia compliance from PSX Terminal APIs, only for REG market."""
+    """Fetch stock prices and Sharia compliance from PSX Terminal APIs, only for REG market, in batches."""
     prices = {}
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
@@ -38,9 +38,8 @@ def fetch_psx_data():
             if not isinstance(response_json, dict):
                 st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
                 return fallback_prices
-            market_data = response_json.get("data", {})
-            reg_data = market_data.get("REG", {}) if isinstance(market_data, dict) else {}
-            for ticker, item in reg_data.items():
+            market_data = response_json.get("data", {}).get("REG", {})
+            for ticker, item in market_data.items():
                 if not isinstance(item, dict):
                     st.warning(f"Skipping invalid REG data item for {ticker}: {item}")
                     continue
@@ -55,11 +54,15 @@ def fetch_psx_data():
             st.error(f"Failed to parse market data API response as JSON: {response.text}. Using fallback prices.")
             return fallback_prices
     except requests.RequestException as e:
-        st.error(f"Error fetching market data from PSX Terminal: {e}. Using fallback prices.")
+        st.error(f"Error fetching market data from PSX Terminal: {e}. Response: {response.text if 'response' in locals() else 'No response'}. Using fallback prices.")
         return fallback_prices
-    
-    symbols = ",".join(prices.keys())
-    if symbols:
+
+    # Batch ticker requests to avoid 404 errors from large ticker lists
+    ticker_list = [t for t in prices.keys() if t.isalpha()]  # Filter out invalid tickers
+    batch_size = 50
+    for i in range(0, len(ticker_list), batch_size):
+        batch = ticker_list[i:i + batch_size]
+        symbols = ",".join(batch)
         try:
             response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
             response.raise_for_status()
@@ -69,11 +72,11 @@ def fetch_psx_data():
                 if isinstance(yields_data, dict):
                     yields_data = [yields_data]
                 if not isinstance(yields_data, list):
-                    st.error(f"Yields 'data' field is not a list: {type(yields_data)}. Using fallback prices.")
-                    return prices or fallback_prices
+                    st.error(f"Yields 'data' field is not a list for batch {symbols}: {type(yields_data)}. Skipping batch.")
+                    continue
                 for item in yields_data:
                     if not isinstance(item, dict):
-                        st.warning(f"Skipping invalid yields data item: {item}")
+                        st.warning(f"Skipping invalid yields data item in batch {symbols}: {item}")
                         continue
                     ticker = item.get("symbol")
                     price = item.get("price")
@@ -83,14 +86,14 @@ def fetch_psx_data():
                             prices[ticker]["price"] = float(price)
                             prices[ticker]["sharia"] = not is_non_compliant
                         except (ValueError, TypeError):
-                            st.warning(f"Invalid price for {ticker}: {price}")
+                            st.warning(f"Invalid price for {ticker} in batch {symbols}: {price}")
                             continue
             except json.JSONDecodeError:
-                st.error(f"Failed to parse yields API response as JSON: {response.text}. Using fallback prices.")
-                return prices or fallback_prices
+                st.error(f"Failed to parse yields API response as JSON for batch {symbols}: {response.text}. Skipping batch.")
+                continue
         except requests.RequestException as e:
-            st.error(f"Error fetching yields data from PSX Terminal: {e}. Using fallback prices.")
-            return prices or fallback_prices
+            st.error(f"Error fetching yields data for batch {symbols}: {e}. Response: {response.text}. Skipping batch.")
+            continue
     return prices or fallback_prices
 
 class PortfolioTracker:
@@ -103,33 +106,15 @@ class PortfolioTracker:
         self.initial_cash = 0.0
         self.current_prices = fetch_psx_data()
         self.target_allocations = {
-            'MLCF': 18.0,
-            'GCIL': 15.0,
-            'MEBL': 10.0,
-            'OGDC': 12.0,
-            'GAL': 11.0,
-            'GHNI': 10.0,
-            'HALEON': 7.0,
-            'MARI': 7.0,
-            'GLAXO': 6.0,
-            'FECTC': 4.0,
-            'FFC': 0.0,
-            'MUGHAL': 0.0
+            'MLCF': 18.0, 'GCIL': 15.0, 'MEBL': 10.0, 'OGDC': 12.0, 'GAL': 11.0,
+            'GHNI': 10.0, 'HALEON': 7.0, 'MARI': 7.0, 'GLAXO': 6.0, 'FECTC': 4.0,
+            'FFC': 0.0, 'MUGHAL': 0.0
         }
         self.target_investment = 410000.0
         self.last_div_per_share = {
-            'MLCF': 10.0,
-            'GCIL': 11.0,
-            'MEBL': 13.0,
-            'OGDC': 14.0,
-            'GAL': 15.0,
-            'GHNI': 16.0,
-            'HALEON': 18.0,
-            'MARI': 19.0,
-            'GLAXO': 20.0,
-            'FECTC': 21.0,
-            'FFC': 21.0,
-            'MUGHAL': 17.0
+            'MLCF': 10.0, 'GCIL': 11.0, 'MEBL': 13.0, 'OGDC': 14.0, 'GAL': 15.0,
+            'GHNI': 16.0, 'HALEON': 18.0, 'MARI': 19.0, 'GLAXO': 20.0, 'FECTC': 21.0,
+            'FFC': 21.0, 'MUGHAL': 17.0
         }
         self.cash_deposits = []
 
@@ -753,6 +738,7 @@ def current_prices_page(tracker):
         new_data = fetch_psx_data()
         tracker.current_prices.update(new_data)
         st.success("PSX data fetched and updated!")
+        st.experimental_rerun()  # Refresh to show updated prices
     prices_list = [{'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia']} for k, v in tracker.current_prices.items()]
     prices_df = pd.DataFrame(prices_list)
     edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True, key="prices_editor")
@@ -763,6 +749,7 @@ def current_prices_page(tracker):
             sharia = row['Sharia Compliant']
             tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
         st.success("Prices updated successfully!")
+        st.experimental_rerun()
 
 def add_transaction_page(tracker):
     st.header("Add Transaction")
@@ -771,30 +758,24 @@ def add_transaction_page(tracker):
         with col1:
             date = st.date_input("Date", value=datetime.now())
             ticker_options = sorted(tracker.current_prices.keys())
-            # Initialize session state for ticker and price
-            if 'selected_ticker' not in st.session_state:
-                st.session_state.selected_ticker = ticker_options[0] if ticker_options else None
-            if 'current_price' not in st.session_state:
-                st.session_state.current_price = tracker.current_prices.get(st.session_state.selected_ticker, {'price': 0.0})['price'] if st.session_state.selected_ticker else 0.0
             ticker = st.selectbox(
                 "Ticker",
                 ticker_options,
-                index=ticker_options.index(st.session_state.selected_ticker) if st.session_state.selected_ticker in ticker_options else 0,
+                index=0,
                 key="ticker_select",
                 help="Select a ticker to automatically fetch its current price"
             )
-            # Update session state when ticker changes
-            if ticker != st.session_state.selected_ticker:
-                st.session_state.selected_ticker = ticker
-                st.session_state.current_price = tracker.current_prices.get(ticker, {'price': 0.0})['price']
             trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
         with col2:
             quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
+            current_price = tracker.current_prices.get(ticker, {'price': 0.0})['price']
+            if current_price == 0.0:
+                st.warning(f"No price data available for {ticker}. Please enter the price manually or fetch latest prices.")
             price = st.number_input(
                 "Price",
                 min_value=0.0,
                 step=0.01,
-                value=float(st.session_state.current_price),
+                value=float(current_price),
                 key=f"price_input_{ticker}",
                 help="Current price fetched for the selected ticker (editable)"
             )
