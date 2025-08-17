@@ -35,7 +35,7 @@ def fetch_psx_data():
         response.raise_for_status()
         try:
             response_json = response.json()
-            st.write(f"Market data API response: {response_json}")  # Log for debugging
+            #st.write(f"Market data API response: {response_json}")  # Log for debugging
             if not isinstance(response_json, dict):
                 st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
                 return fallback_prices
@@ -841,3 +841,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
