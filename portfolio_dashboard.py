@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
+import requests
+from bs4 import BeautifulSoup
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -9,6 +11,42 @@ def excel_date_to_datetime(serial):
         return datetime(1900, 1, 1) + timedelta(days=int(serial) - 2)
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
+
+@st.cache_data(ttl=43200)
+def fetch_psx_data():
+    prices = {}
+    # Fetch prices from market-summary
+    url = "https://www.psx.com.pk/market-summary/"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    tables = soup.find_all('table', class_='tbldata14')
+    for table in tables:
+        rows = table.find_all('tr')[1:]  # Skip header
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 6:
+                ticker = cols[0].text.strip()
+                current_str = cols[4].text.strip().replace(',', '')
+                try:
+                    current = float(current_str)
+                except ValueError:
+                    continue
+                prices[ticker] = {'price': current, 'sharia': False}
+
+    # Fetch Sharia compliant tickers from KMIALLSHR
+    sharia_url = "https://dps.psx.com.pk/indices/KMIALLSHR"
+    sh_response = requests.get(sharia_url)
+    sh_soup = BeautifulSoup(sh_response.text, 'html.parser')
+    sh_table = sh_soup.find('table', class_='tbldata14')
+    if sh_table:
+        sh_rows = sh_table.find_all('tr')[1:]
+        for row in sh_rows:
+            cols = row.find_all('td')
+            if len(cols) >= 1:
+                ticker = cols[0].text.strip()
+                if ticker in prices:
+                    prices[ticker]['sharia'] = True
+    return prices
 
 class PortfolioTracker:
     def __init__(self):
@@ -18,20 +56,7 @@ class PortfolioTracker:
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
-        self.current_prices = {
-            'MLCF': 83.19,
-            'GCIL': 26.58,
-            'MEBL': 369.99,
-            'OGDC': 270.48,
-            'GAL': 525.88,
-            'GHNI': 787.05,
-            'MUGHAL': 63.76,
-            'HALEON': 822.04,
-            'MARI': 618.53,
-            'GLAXO': 425.6,
-            'FECTC': 84.61,
-            'FFC': 0.0  # Added for completeness, as FFC appears in transactions
-        }
+        self.current_prices = fetch_psx_data()
         # Target allocations from shariah-re-distribuation sheet
         self.target_allocations = {
             'MLCF': 18.0,
@@ -149,9 +174,7 @@ class PortfolioTracker:
                 continue
             avg_buy = h['total_cost'] / shares
             current_price = (current_prices.get(ticker) if current_prices else None) or \
-                            self.current_prices.get(ticker, 0.0)
-            if current_price == 0.0:
-                st.warning(f"No price available for {ticker}. Using 0.0.")
+                            self.current_prices.get(ticker, {'price': 0.0})['price']
             market_value = shares * current_price
             total_portfolio_value += market_value
             gain_loss = market_value - h['total_cost']
@@ -159,6 +182,7 @@ class PortfolioTracker:
             div = self.dividends.get(ticker, 0.0)
             roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
             target_allocation = self.target_allocations.get(ticker, 0.0)
+            sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
             portfolio.append({
                 'Stock': ticker,
                 'Shares': shares,
@@ -170,7 +194,8 @@ class PortfolioTracker:
                 '% Gain': round(per_gain * 100, 2),
                 'Dividends': round(div, 2),
                 'ROI %': round(roi, 2),
-                'Target Allocation %': target_allocation
+                'Target Allocation %': target_allocation,
+                'Sharia Compliant': sharia
             })
         portfolio_df = pd.DataFrame(portfolio)
         if total_portfolio_value > 0:
@@ -213,7 +238,7 @@ class PortfolioTracker:
             current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
             target_value = total_value * (target / 100)
             delta_value = target_value - current_value
-            current_price = self.current_prices.get(ticker, 0.0)
+            current_price = self.current_prices.get(ticker, {'price': 0.0})['price']
             suggested_shares = delta_value / current_price if current_price > 0 else 0
             plan.append({
                 'Stock': ticker,
@@ -239,7 +264,7 @@ class PortfolioTracker:
             if target == 0:
                 continue
             dist = cash * (target / 100)
-            P = self.current_prices.get(ticker, 0.0)
+            P = self.current_prices.get(ticker, {'price': 0.0})['price']
             if P == 0.0:
                 continue
             if P <= 20:
@@ -276,80 +301,6 @@ class PortfolioTracker:
         for index, row in dist_df.iterrows():
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
-
-def initialize_tracker(tracker):
-    """Initialize tracker with transactions and dividends from Excel."""
-    # Initial deposit from Transactions sheet
-    tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
-    # Transactions from Transactions sheet
-    transactions = [
-        (45665, 'FECTC', 'Buy', 26, 84.14, 0),
-        (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
-        (45665, 'GAL', 'Buy', 8, 510.47, 6.13),
-        (45665, 'GCIL', 'Buy', 280, 25.68, 0),
-        (45665, 'GHNI', 'Buy', 4, 805, 4.83),
-        (45665, 'GLAXO', 'Buy', 6, 426, 3.83),
-        (45665, 'HALEON', 'Buy', 3, 827.99, 3.73),
-        (45665, 'MARI', 'Buy', 4, 622.27, 0),
-        (45665, 'MLCF', 'Buy', 107, 81.82, 0),
-        (45665, 'MUGHAL', 'Buy', 150, 64, 14.4),
-        (45665, 'MEBL', 'Buy', 15, 362.76, 0),
-        (45665, 'OGDC', 'Buy', 23, 234.77, 0),
-        (45755, 'FECTC', 'Buy', 164, 85.14, 0),
-        (45755, 'FFC', 'Buy', 76, 456.9, 52.09),
-        (45755, 'GAL', 'Buy', 53, 518.99, 41.26),
-        (45755, 'GCIL', 'Buy', 1766, 25.79, 0),
-        (45755, 'GHNI', 'Buy', 26, 801, 31.24),
-        (45755, 'GLAXO', 'Buy', 41, 426, 26.2),
-        (45755, 'HALEON', 'Buy', 20, 837.85, 25.14),
-        (45755, 'MARI', 'Buy', 27, 632.02, 0),
-        (45755, 'MLCF', 'Buy', 667, 83.94, 0),
-        (45755, 'MUGHAL', 'Buy', 159, 64.02, 15.24),
-        (45755, 'OGDC', 'Buy', 134, 260.7, 0),
-        (45755, 'MEBL', 'Buy', 96, 363.58, 0),
-        (45785, 'FFC', 'Buy', 14, 469.9, 9.87),
-        (45785, 'HALEON', 'Buy', 7, 836, 8.78),
-        (45785, 'OGDC', 'Buy', 25, 258.7, 0),
-        (45816, 'FFC', 'Buy', 18, 460.9, 12.45),
-        (45816, 'MEBL', 'Buy', 23, 369.16, 0),
-        (45816, 'MUGHAL', 'Sell', 309, 64.01, 29.66),
-        (45877, 'FFC', 'Sell', 10, 454.1, 6.82),
-        (45877, 'FFC', 'Sell', 19, 454.1, 12.94),
-        (45877, 'FFC', 'Sell', 30, 454.1, 20.44),
-        (45877, 'FFC', 'Sell', 2, 454.1, 1.36),
-        (45877, 'FFC', 'Sell', 59, 454.1, 40.19),
-        (45969, 'FECTC', 'Buy', 32, 88.15, 0),
-        (45969, 'GAL', 'Buy', 12, 529.99, 9.54),
-        (45969, 'GCIL', 'Buy', 300, 26.7, 0),
-        (45969, 'GHNI', 'Buy', 7, 788, 8.27),
-        (45969, 'GLAXO', 'Buy', 6, 429.99, 3.87),
-        (45969, 'HALEON', 'Buy', 5, 829, 6.22),
-        (45969, 'MEBL', 'Buy', 15, 374.98, 0),
-        (45969, 'OGDC', 'Buy', 21, 272.69, 0),
-        (45969, 'MARI', 'Buy', 9, 629.6, 0),
-        (45969, 'MLCF', 'Buy', 115, 83.48, 0)
-    ]
-    for trans in transactions:
-        try:
-            tracker.add_transaction(*trans)
-        except ValueError as e:
-            st.error(f"Error adding transaction {trans}: {e}")
-
-    # Dividends from Portfolio sheet
-    div_data = {
-        'MLCF': 8890,
-        'GCIL': 25806,
-        'MEBL': 1937,
-        'OGDC': 2842,
-        'GAL': 1095,
-        'GHNI': 592,
-        'HALEON': 630,
-        'MARI': 760,
-        'GLAXO': 1060,
-        'FECTC': 4662
-    }
-    for ticker, amount in div_data.items():
-        tracker.add_dividend(ticker, amount)
 
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
@@ -407,7 +358,8 @@ def main():
                     "ROI %": st.column_config.NumberColumn(format="%.2f%"),
                     "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                     "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%")
+                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Sharia Compliant": st.column_config.CheckboxColumn()
                 },
                 use_container_width=True
             )
@@ -501,7 +453,7 @@ def main():
                     "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
                     "SST": st.column_config.NumberColumn(format="PKR %.2f"),
                     "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Leftover": st.column_config.NumberColumn(format="%.2f")
+                    "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
                 },
                 use_container_width=True
             )
@@ -557,11 +509,19 @@ def main():
 
     elif page == "Current Prices":
         st.header("Current Prices")
-        prices_df = pd.DataFrame(list(tracker.current_prices.items()), columns=['Stock', 'Price'])
-        edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True)
+        if st.button("Fetch Latest PSX Data"):
+            new_data = fetch_psx_data()
+            tracker.current_prices.update(new_data)
+            st.success("PSX data fetched and updated!")
+        prices_list = [{'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia']} for k, v in tracker.current_prices.items()]
+        prices_df = pd.DataFrame(prices_list)
+        edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True, key="prices_editor")
         if st.button("Update Prices"):
-            new_prices = dict(zip(edited_df['Stock'], edited_df['Price']))
-            tracker.current_prices.update(new_prices)
+            for _, row in edited_df.iterrows():
+                ticker = row['Ticker']
+                price = row['Price']
+                sharia = row['Sharia Compliant']
+                tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
             st.success("Prices updated successfully!")
 
     elif page == "Add Transaction":
@@ -570,7 +530,7 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 date = st.date_input("Date", value=datetime.now())
-                ticker = st.selectbox("Ticker", list(tracker.current_prices.keys()) + ["None (for Deposit)"])
+                ticker = st.selectbox("Ticker", list(tracker.current_prices.keys()))
                 trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
