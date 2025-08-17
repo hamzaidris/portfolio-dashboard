@@ -817,7 +817,6 @@ def main():
             st.success("Prices refreshed.")
             st.experimental_rerun()
 
-
     # Ensure session state keys exist
     if "selected_ticker" not in st.session_state:
         st.session_state.selected_ticker = None
@@ -891,6 +890,4 @@ elif page == "Add Dividend":
 
 if __name__ == '__main__':
     main()
-
-
 
