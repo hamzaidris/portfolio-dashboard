@@ -18,7 +18,6 @@ class PortfolioTracker:
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
-        # Prices from PSX_Live_Price_fetch_python sheet
         self.current_prices = {
             'MLCF': 83.19,
             'GCIL': 26.58,
@@ -32,7 +31,7 @@ class PortfolioTracker:
             'GLAXO': 425.6,
             'FECTC': 84.61
         }
-        # Target allocations from Investment Plan sheet
+        # Initial target allocations from Investment Plan sheet
         self.target_allocations = {
             'MLCF': 18.0,
             'GCIL': 15.0,
@@ -108,6 +107,41 @@ class PortfolioTracker:
             'total': amount,
             'realized': 0.0
         })
+
+    def delete_transaction(self, index):
+        """Delete a transaction and recalculate holdings."""
+        if index < 0 or index >= len(self.transactions):
+            raise ValueError("Invalid transaction index.")
+        trans = self.transactions.pop(index)
+        # Reverse the transaction
+        if trans['type'] == 'Buy':
+            self.cash += -trans['total']  # Refund cost
+            self.holdings[trans['ticker']]['shares'] -= trans['quantity']
+            self.holdings[trans['ticker']]['total_cost'] += trans['total']  # Since total is negative
+            if self.holdings[trans['ticker']]['shares'] <= 0:
+                del self.holdings[trans['ticker']]
+        elif trans['type'] == 'Sell':
+            self.cash -= trans['total']  # Remove proceeds
+            self.realized_gain -= trans['realized']
+            if trans['ticker'] not in self.holdings:
+                self.holdings[trans['ticker']] = {'shares': 0.0, 'total_cost': 0.0}
+            # avg = trans['price'] - trans['realized'] / trans['quantity'] if trans['quantity'] > 0 else 0
+            gain = trans['realized']  # gain includes -fee, but for avg, gain = q*p - q*avg - fee, but since realized = gain - fee, wait, in code, realized = gain - fee, where gain = q*(p - avg)
+            # So, gain = realized + fee = q*(p - avg), avg = p - (realized + fee) / q
+            fee = trans['fee']
+            q = trans['quantity']
+            p = trans['price']
+            realized = trans['realized']
+            gain = realized + fee
+            avg = p - gain / q if q > 0 else 0
+            self.holdings[trans['ticker']]['shares'] += q
+            self.holdings[trans['ticker']]['total_cost'] += q * avg
+        elif trans['type'] == 'Deposit':
+            self.cash -= trans['total']
+            self.initial_cash -= trans['total']
+        elif trans['type'] == 'Dividend':
+            self.cash -= trans['total']
+            self.dividends[trans['ticker']] -= trans['total']
 
     def get_portfolio(self, current_prices=None):
         """Generate portfolio summary with current prices."""
@@ -194,76 +228,55 @@ class PortfolioTracker:
             })
         return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
 
-def initialize_tracker(tracker):
-    """Initialize tracker with transactions and dividends from Excel."""
-    tracker.add_transaction(datetime(2025, 1, 1), None, 'Deposit', 414375.28, 0)
-    transactions = [
-        (45665, 'FECTC', 'Buy', 26, 84.14, 0),
-        (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
-        (45665, 'GAL', 'Buy', 8, 510.47, 6.13),
-        (45665, 'GCIL', 'Buy', 280, 25.68, 0),
-        (45665, 'GHNI', 'Buy', 4, 805, 4.83),
-        (45665, 'GLAXO', 'Buy', 6, 426, 3.83),
-        (45665, 'HALEON', 'Buy', 3, 827.99, 3.73),
-        (45665, 'MARI', 'Buy', 4, 622.27, 0),
-        (45665, 'MLCF', 'Buy', 107, 81.82, 0),
-        (45665, 'MUGHAL', 'Buy', 150, 64, 14.4),
-        (45665, 'MEBL', 'Buy', 15, 362.76, 0),
-        (45665, 'OGDC', 'Buy', 23, 234.77, 0),
-        (45755, 'FECTC', 'Buy', 164, 85.14, 0),
-        (45755, 'FFC', 'Buy', 76, 456.9, 52.09),
-        (45755, 'GAL', 'Buy', 53, 518.99, 41.26),
-        (45755, 'GCIL', 'Buy', 1766, 25.79, 0),
-        (45755, 'GHNI', 'Buy', 26, 801, 31.24),
-        (45755, 'GLAXO', 'Buy', 41, 426, 26.2),
-        (45755, 'HALEON', 'Buy', 20, 837.85, 25.14),
-        (45755, 'MARI', 'Buy', 27, 632.02, 0),
-        (45755, 'MLCF', 'Buy', 667, 83.94, 0),
-        (45755, 'MUGHAL', 'Buy', 159, 64.02, 15.24),
-        (45755, 'OGDC', 'Buy', 134, 260.7, 0),
-        (45755, 'MEBL', 'Buy', 96, 363.58, 0),
-        (45785, 'FFC', 'Buy', 14, 469.9, 9.87),
-        (45785, 'HALEON', 'Buy', 7, 836, 8.78),
-        (45785, 'OGDC', 'Buy', 25, 258.7, 0),
-        (45816, 'FFC', 'Buy', 18, 460.9, 12.45),
-        (45816, 'MEBL', 'Buy', 23, 369.16, 0),
-        (45816, 'MUGHAL', 'Sell', 309, 64.01, 29.66),
-        (45877, 'FFC', 'Sell', 10, 454.1, 6.82),
-        (45877, 'FFC', 'Sell', 19, 454.1, 12.94),
-        (45877, 'FFC', 'Sell', 30, 454.1, 20.44),
-        (45877, 'FFC', 'Sell', 2, 454.1, 1.36),
-        (45877, 'FFC', 'Sell', 59, 454.1, 40.19),
-        (45969, 'FECTC', 'Buy', 32, 88.15, 0),
-        (45969, 'GAL', 'Buy', 12, 529.99, 9.54),
-        (45969, 'GCIL', 'Buy', 300, 26.7, 0),
-        (45969, 'GHNI', 'Buy', 7, 788, 8.27),
-        (45969, 'GLAXO', 'Buy', 6, 429.99, 3.87),
-        (45969, 'HALEON', 'Buy', 5, 829, 6.22),
-        (45969, 'MEBL', 'Buy', 15, 374.98, 0),
-        (45969, 'OGDC', 'Buy', 21, 272.69, 0),
-        (45969, 'MARI', 'Buy', 9, 629.6, 0),
-        (45969, 'MLCF', 'Buy', 115, 83.48, 0)
-    ]
-    for trans in transactions:
-        try:
-            tracker.add_transaction(*trans)
-        except ValueError as e:
-            st.error(f"Error adding transaction {trans}: {e}")
+    def update_target_allocations(self, new_allocations):
+        """Update target allocations and validate sum to 100%."""
+        total = sum(new_allocations.values())
+        if abs(total - 100.0) > 0.01:
+            raise ValueError(f"Target allocations must sum to 100%, got {total}%")
+        self.target_allocations.update(new_allocations)
 
-    div_data = {
-        'MLCF': 8890,
-        'GCIL': 25806,
-        'MEBL': 1937,
-        'OGDC': 2842,
-        'GAL': 1095,
-        'GHNI': 592,
-        'HALEON': 630,
-        'MARI': 760,
-        'GLAXO': 1060,
-        'FECTC': 4662
-    }
-    for ticker, amount in div_data.items():
-        tracker.add_dividend(ticker, amount)
+    def calculate_distribution(self, cash):
+        """Calculate distribution of cash to stocks based on target allocations, with fees."""
+        dist_list = []
+        for ticker, target in self.target_allocations.items():
+            dist = cash * (target / 100)
+            P = self.current_prices.get(ticker, 0.0)
+            if P == 0.0:
+                continue
+            if P <= 20:
+                fee_per = 0.03
+                sst_per = 0.0045
+                total_per = P + fee_per + sst_per
+                U = int(dist / total_per)
+                fee = U * fee_per
+                sst = U * sst_per
+            else:
+                brokerage_rate = 0.0015
+                sst_rate = brokerage_rate * 0.15
+                total_rate = brokerage_rate + sst_rate
+                investable = dist / (1 + total_rate)
+                U = int(investable / P)
+                fee = U * P * brokerage_rate
+                sst = fee * 0.15
+            net_invested = U * P + fee + sst
+            leftover = dist - net_invested
+            dist_list.append({
+                'Stock': ticker,
+                'Distributed': round(dist, 2),
+                'Price': P,
+                'Units': U,
+                'Fee': round(fee, 2),
+                'SST': round(sst, 2),
+                'Net Invested': round(net_invested, 2),
+                'Leftover': round(leftover, 2)
+            })
+        return pd.DataFrame(dist_list)
+
+    def execute_distribution(self, dist_df, date):
+        """Execute the distribution by adding buy transactions."""
+        for index, row in dist_df.iterrows():
+            if row['Units'] > 0:
+                self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
 
 def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
@@ -278,7 +291,7 @@ def main():
 
     # Sidebar for navigation
     st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Add Transaction", "Add Dividend"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
 
     if page == "Dashboard":
         st.header("Dashboard")
@@ -360,8 +373,25 @@ def main():
                 color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
             )
             st.plotly_chart(fig_dist, use_container_width=True)
-        else:
-            st.info("No holdings to analyze.")
+
+            # Edit Target Allocations
+            st.subheader("Edit Target Allocations")
+            with st.form("edit_allocations_form"):
+                st.write("Enter new target allocation percentages (must sum to 100%)")
+                new_allocations = {}
+                cols = st.columns(5)
+                for i, ticker in enumerate(tracker.target_allocations.keys()):
+                    with cols[i % 5]:
+                        new_allocations[ticker] = st.number_input(
+                            f"{ticker} (%)", min_value=0.0, max_value=100.0, value=tracker.target_allocations[ticker], step=0.1
+                        )
+                submit = st.form_submit_button("Update Allocations")
+                if submit:
+                    try:
+                        tracker.update_target_allocations(new_allocations)
+                        st.success("Target allocations updated successfully!")
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
 
     elif page == "Investment Plan":
         st.header("Investment Plan")
@@ -379,8 +409,32 @@ def main():
                 use_container_width=True
             )
             st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
-        else:
-            st.info("No investment plan available.")
+
+        # Distribute Cash
+        st.subheader("Add and Distribute Cash")
+        with st.form("distribute_cash_form"):
+            cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
+            submit_calc = st.form_submit_button("Calculate Distribution")
+        if submit_calc:
+            dist_df = tracker.calculate_distribution(cash)
+            st.session_state.dist_df = dist_df
+            st.dataframe(
+                dist_df,
+                column_config={
+                    "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                },
+                use_container_width=True
+            )
+            if st.button("Confirm and Execute Distribution"):
+                tracker.add_transaction(datetime.now(), None, 'Deposit', cash, 0.0)
+                tracker.execute_distribution(dist_df, datetime.now())
+                st.success("Cash added and distributed successfully!")
+                st.experimental_rerun()
 
     elif page == "Cash":
         st.header("Cash Summary")
@@ -406,18 +460,34 @@ def main():
         if tracker.transactions:
             trans_df = pd.DataFrame(tracker.transactions)
             trans_df['date'] = trans_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                trans_df,
-                column_config={
-                    "total": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "realized": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "price": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "fee": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
+            st.subheader("Transactions")
+            selected = []
+            for i, row in trans_df.iterrows():
+                cols = st.columns([1, 8])
+                with cols[0]:
+                    if st.checkbox(f"Delete {i}", key=f"delete_{i}"):
+                        selected.append(i)
+                with cols[1]:
+                    st.write(f"{row['date']} | {row['type']} | {row['ticker']} | Qty: {row['quantity']} | Price: PKR {row['price']:.2f} | Fee: PKR {row['fee']:.2f} | Total: PKR {row['total']:.2f}")
+            if st.button("Delete Selected Transactions"):
+                try:
+                    for index in sorted(selected, reverse=True):  # Delete in reverse to avoid index issues
+                        tracker.delete_transaction(index)
+                    st.success("Selected transactions deleted successfully!")
+                    st.experimental_rerun()
+                except ValueError as e:
+                    st.error(f"Error: {e}")
         else:
             st.info("No transactions recorded.")
+
+    elif page == "Current Prices":
+        st.header("Current Prices")
+        prices_df = pd.DataFrame(list(tracker.current_prices.items()), columns=['Stock', 'Price'])
+        edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True)
+        if st.button("Update Prices"):
+            new_prices = dict(zip(edited_df['Stock'], edited_df['Price']))
+            tracker.current_prices.update(new_prices)
+            st.success("Prices updated successfully!")
 
     elif page == "Add Transaction":
         st.header("Add Transaction")
@@ -436,6 +506,7 @@ def main():
                 try:
                     tracker.add_transaction(date, ticker if trans_type != "Deposit" else None, trans_type, quantity, price, fee)
                     st.success("Transaction added successfully!")
+                    st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
 
@@ -449,6 +520,7 @@ def main():
                 try:
                     tracker.add_dividend(ticker, amount)
                     st.success("Dividend added successfully!")
+                    st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
 
