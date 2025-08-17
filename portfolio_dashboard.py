@@ -838,7 +838,6 @@ def main():
                     st.experimental_rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")'''
-    import requests
 
 def fetch_all_psx_tickers():
     url = "https://psxterminal.com/api/market-data"
@@ -879,6 +878,7 @@ for ticker, info in list(all_tickers.items())[:10]:
 
 if __name__ == '__main__':
     main()
+
 
 
 
