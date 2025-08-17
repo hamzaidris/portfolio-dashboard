@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import requests
+import json
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -19,17 +20,35 @@ def fetch_psx_data():
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
         response.raise_for_status()
-        market_data = response.json().get("data", [])
-        for item in market_data:
-            ticker = item.get("symbol")
-            price = item.get("price")
-            if ticker and price is not None:
-                try:
-                    prices[ticker] = {"price": float(price), "sharia": False}
-                except (ValueError, TypeError):
+        try:
+            response_json = response.json()
+            # Log the response for debugging
+            st.write("Market Data API Response:", response_json)  # Temporary for debugging
+            if not isinstance(response_json, dict):
+                st.error(f"Market data API returned unexpected type: {type(response_json)}. Expected dict.")
+                return prices
+            market_data = response_json.get("data", [])
+            if not isinstance(market_data, list):
+                st.error(f"Market data 'data' field is not a list: {type(market_data)}. Content: {market_data}")
+                return prices
+            for item in market_data:
+                if not isinstance(item, dict):
+                    st.warning(f"Skipping invalid market data item: {item}")
                     continue
+                ticker = item.get("symbol")
+                price = item.get("price")
+                if ticker and price is not None:
+                    try:
+                        prices[ticker] = {"price": float(price), "sharia": False}
+                    except (ValueError, TypeError):
+                        st.warning(f"Invalid price for {ticker}: {price}")
+                        continue
+        except json.JSONDecodeError:
+            st.error(f"Failed to parse market data API response as JSON: {response.text}")
+            return prices
     except requests.RequestException as e:
         st.error(f"Error fetching market data from PSX Terminal: {e}")
+        return prices
 
     # Fetch Sharia compliance and prices from /api/yields/{SYMBOLS}
     symbols = ",".join(prices.keys())  # Join all tickers for yields API
@@ -37,21 +56,39 @@ def fetch_psx_data():
         try:
             response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
             response.raise_for_status()
-            yields_data = response.json().get("data", [])
-            if isinstance(yields_data, dict):  # Single symbol case
-                yields_data = [yields_data]
-            for item in yields_data:
-                ticker = item.get("symbol")
-                price = item.get("price")
-                is_non_compliant = item.get("isNonCompliant", True)
-                if ticker and price is not None:
-                    try:
-                        prices[ticker]["price"] = float(price)
-                        prices[ticker]["sharia"] = not is_non_compliant
-                    except (ValueError, TypeError):
+            try:
+                response_json = response.json()
+                # Log the response for debugging
+                st.write("Yields API Response:", response_json)  # Temporary for debugging
+                if not isinstance(response_json, dict):
+                    st.error(f"Yields API returned unexpected type: {type(response_json)}. Expected dict.")
+                    return prices
+                yields_data = response_json.get("data", [])
+                if isinstance(yields_data, dict):  # Single symbol case
+                    yields_data = [yields_data]
+                if not isinstance(yields_data, list):
+                    st.error(f"Yields 'data' field is not a list: {type(yields_data)}. Content: {yields_data}")
+                    return prices
+                for item in yields_data:
+                    if not isinstance(item, dict):
+                        st.warning(f"Skipping invalid yields data item: {item}")
                         continue
+                    ticker = item.get("symbol")
+                    price = item.get("price")
+                    is_non_compliant = item.get("isNonCompliant", True)
+                    if ticker and price is not None:
+                        try:
+                            prices[ticker]["price"] = float(price)
+                            prices[ticker]["sharia"] = not is_non_compliant
+                        except (ValueError, TypeError):
+                            st.warning(f"Invalid price for {ticker}: {price}")
+                            continue
+            except json.JSONDecodeError:
+                st.error(f"Failed to parse yields API response as JSON: {response.text}")
+                return prices
         except requests.RequestException as e:
             st.error(f"Error fetching yields data from PSX Terminal: {e}")
+            return prices
 
     return prices
 
