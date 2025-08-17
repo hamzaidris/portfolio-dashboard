@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import requests
-from bs4 import BeautifulSoup
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -14,48 +13,46 @@ def excel_date_to_datetime(serial):
 
 @st.cache_data(ttl=43200)  # Cache for 12 hours (43200 seconds)
 def fetch_psx_data():
-    """Fetch stock prices and Sharia compliance from PSX."""
+    """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
-    # Fetch prices from market-summary
-    url = "https://www.psx.com.pk/market-summary/"
+    # Fetch all symbols from /api/market-data
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        tables = soup.find_all('table', class_='tbldata14')
-        for table in tables:
-            rows = table.find_all('tr')[1:]  # Skip header
-            for row in rows:
-                cols = row.find_all('td')
-                if len(cols) >= 6:
-                    ticker = cols[0].text.strip()
-                    current_str = cols[4].text.strip().replace(',', '')
-                    try:
-                        current = float(current_str)
-                    except ValueError:
-                        continue
-                    prices[ticker] = {'price': current, 'sharia': False}
+        market_data = response.json().get("data", [])
+        for item in market_data:
+            ticker = item.get("symbol")
+            price = item.get("price")
+            if ticker and price is not None:
+                try:
+                    prices[ticker] = {"price": float(price), "sharia": False}
+                except (ValueError, TypeError):
+                    continue
     except requests.RequestException as e:
-        st.error(f"Error fetching prices from PSX: {e}")
-        return prices
+        st.error(f"Error fetching market data from PSX Terminal: {e}")
 
-    # Fetch Sharia compliant tickers from KMIALLSHR
-    sharia_url = "https://dps.psx.com.pk/indices/KMIALLSHR"
-    try:
-        sh_response = requests.get(sharia_url, timeout=10)
-        sh_response.raise_for_status()
-        sh_soup = BeautifulSoup(sh_response.text, 'html.parser')
-        sh_table = sh_soup.find('table', class_='tbldata14')
-        if sh_table:
-            sh_rows = sh_table.find_all('tr')[1:]
-            for row in sh_rows:
-                cols = row.find_all('td')
-                if len(cols) >= 1:
-                    ticker = cols[0].text.strip()
-                    if ticker in prices:
-                        prices[ticker]['sharia'] = True
-    except requests.RequestException as e:
-        st.error(f"Error fetching Sharia data from PSX: {e}")
+    # Fetch Sharia compliance and prices from /api/yields/{SYMBOLS}
+    symbols = ",".join(prices.keys())  # Join all tickers for yields API
+    if symbols:
+        try:
+            response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
+            response.raise_for_status()
+            yields_data = response.json().get("data", [])
+            if isinstance(yields_data, dict):  # Single symbol case
+                yields_data = [yields_data]
+            for item in yields_data:
+                ticker = item.get("symbol")
+                price = item.get("price")
+                is_non_compliant = item.get("isNonCompliant", True)
+                if ticker and price is not None:
+                    try:
+                        prices[ticker]["price"] = float(price)
+                        prices[ticker]["sharia"] = not is_non_compliant
+                    except (ValueError, TypeError):
+                        continue
+        except requests.RequestException as e:
+            st.error(f"Error fetching yields data from PSX Terminal: {e}")
+
     return prices
 
 class PortfolioTracker:
@@ -408,7 +405,7 @@ def main():
         col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
         col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
         col3.metric("Total Dividends", f"PKR {dashboard['Total Dividends']:,.2f}")
-        col4.metric("Cash Balance", f"PKR {dashboard['Cash Balance']:,.2f}")
+        col4.metric("Cash Balance", f"PKR {tracker.cash:,.2f}")  # Fixed: Use tracker.cash
         col1.metric("Total Invested", f"PKR {dashboard['Total Invested']:,.2f}")
         col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
         col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
