@@ -803,7 +803,7 @@ def main():
             st.success("Prices updated successfully!")
 
     elif page == "Add Transaction":
-    st.header("Add Transaction")
+        st.header("Add Transaction")
 
     # --- Live Prices: refresh + session state binding ---
     colA, colB = st.columns([3,1])
@@ -891,4 +891,5 @@ elif page == "Add Dividend":
 
 if __name__ == '__main__':
     main()
+
 
