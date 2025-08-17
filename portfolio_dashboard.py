@@ -4,6 +4,14 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import requests
 import json
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import socket
+import logging
+
+# Configure logging for debugging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -14,7 +22,7 @@ def excel_date_to_datetime(serial):
 
 @st.cache_data(ttl=60)  # Cache for 1 minute during testing
 def fetch_psx_data():
-    """Fetch stock prices and Sharia compliance from PSX Terminal APIs, only for REG market, in batches."""
+    """Fetch stock prices and Sharia compliance from PSX Terminal APIs with retries, only for REG market, in batches."""
     prices = {}
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
@@ -30,8 +38,23 @@ def fetch_psx_data():
         'FFC': {'price': 454.10, 'sharia': False},
         'MUGHAL': {'price': 64.01, 'sharia': False}
     }
+
+    # Create a session with retry logic
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+
+    # Test network connectivity
     try:
-        response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
+        socket.create_connection(("psxterminal.com", 443), timeout=5)
+        logger.info("Network connectivity to psxterminal.com:443 is successful.")
+    except socket.error as e:
+        st.error(f"Network connectivity test failed: {e}. Check your internet connection or firewall settings.")
+        return fallback_prices
+
+    # Fetch market data
+    try:
+        response = session.get("https://psxterminal.com/api/market-data?market=REG", timeout=10)
         response.raise_for_status()
         try:
             response_json = response.json()
@@ -55,6 +78,7 @@ def fetch_psx_data():
             return fallback_prices
     except requests.RequestException as e:
         st.error(f"Error fetching market data from PSX Terminal: {e}. Response: {response.text if 'response' in locals() else 'No response'}. Using fallback prices.")
+        logger.error(f"Market data fetch error: {e}", exc_info=True)
         return fallback_prices
 
     # Batch ticker requests to avoid 404 errors from large ticker lists
@@ -64,7 +88,7 @@ def fetch_psx_data():
         batch = ticker_list[i:i + batch_size]
         symbols = ",".join(batch)
         try:
-            response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
+            response = session.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
             response.raise_for_status()
             try:
                 response_json = response.json()
@@ -93,7 +117,9 @@ def fetch_psx_data():
                 continue
         except requests.RequestException as e:
             st.error(f"Error fetching yields data for batch {symbols}: {e}. Response: {response.text}. Skipping batch.")
+            logger.error(f"Yields data fetch error for batch {symbols}: {e}", exc_info=True)
             continue
+
     return prices or fallback_prices
 
 class PortfolioTracker:
@@ -735,10 +761,13 @@ def transactions_page(tracker):
 def current_prices_page(tracker):
     st.header("Current Prices")
     if st.button("Fetch Latest PSX Data"):
-        new_data = fetch_psx_data()
-        tracker.current_prices.update(new_data)
-        st.success("PSX data fetched and updated!")
-        st.experimental_rerun()  # Refresh to show updated prices
+        try:
+            new_data = fetch_psx_data()
+            tracker.current_prices.update(new_data)
+            st.success("PSX data fetched and updated!")
+            st.experimental_rerun()  # Refresh to show updated prices
+        except Exception as e:
+            st.error(f"Failed to fetch PSX data: {e}. Using existing prices.")
     prices_list = [{'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia']} for k, v in tracker.current_prices.items()]
     prices_df = pd.DataFrame(prices_list)
     edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True, key="prices_editor")
