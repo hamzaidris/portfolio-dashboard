@@ -72,22 +72,7 @@ def fetch_psx_data():
     except requests.RequestException as e:
         st.error(f"Error fetching market data from PSX Terminal: {e}. Using fallback prices.")
         return fallback_prices
-        if 'tickers' not in st.session_state:
-    # Initialize with fallback tickers
-    st.session_state['tickers'] = ['MLCF', 'GCIL', 'MEBL', ...]  
-
-new_ticker = st.text_input('Add a ticker:')
-if new_ticker:
-    if new_ticker not in st.session_state['tickers']:
-        st.session_state['tickers'].append(new_ticker)
-
-def fetch_psx_data(tickers):
-    # fetch market data as before, but filter only tickers in `tickers` list
-    ...
-
-prices = fetch_psx_data(st.session_state['tickers'])
-st.write(prices)
-
+        
     symbols = ",".join(prices.keys())
     if symbols:
         try:
@@ -856,5 +841,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
