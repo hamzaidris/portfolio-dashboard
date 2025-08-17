@@ -12,7 +12,7 @@ def excel_date_to_datetime(serial):
     except (ValueError, TypeError):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
-@st.cache_data(ttl=43200)  # Cache for 12 hours (43200 seconds)
+@st.cache_data(ttl=43200)  # Cache for 12 hours
 def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
@@ -62,7 +62,6 @@ def fetch_psx_data():
         st.error(f"Error fetching market data from PSX Terminal: {e}. Using fallback prices.")
         return fallback_prices
 
-    # Fetch Sharia compliance and prices from /api/yields/{SYMBOLS}
     symbols = ",".join(prices.keys())
     if symbols:
         try:
@@ -137,10 +136,9 @@ class PortfolioTracker:
             'FFC': 21.0,
             'MUGHAL': 17.0
         }
-        self.cash_deposits = []  # Track cash deposits for "Cash to be Invested"
+        self.cash_deposits = []
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
-        """Add a buy, sell, or deposit transaction."""
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
         trans = {
@@ -189,7 +187,6 @@ class PortfolioTracker:
         self.transactions.append(trans)
 
     def add_dividend(self, ticker, amount):
-        """Add a dividend payment for a ticker."""
         if ticker not in self.dividends:
             self.dividends[ticker] = 0.0
         self.dividends[ticker] += amount
@@ -206,7 +203,6 @@ class PortfolioTracker:
         })
 
     def delete_transaction(self, index):
-        """Delete a transaction and recalculate holdings."""
         if index < 0 or index >= len(self.transactions):
             raise ValueError("Invalid transaction index.")
         trans = self.transactions.pop(index)
@@ -234,7 +230,6 @@ class PortfolioTracker:
             self.dividends[trans['ticker']] -= trans['total']
 
     def get_portfolio(self, current_prices=None):
-        """Generate portfolio summary with current prices."""
         portfolio = []
         total_invested = sum(h['total_cost'] for h in self.holdings.values() if h['shares'] > 0)
         total_portfolio_value = 0.0
@@ -249,7 +244,6 @@ class PortfolioTracker:
             total_portfolio_value += market_value
             gain_loss = market_value - h['total_cost']
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
-            # Calculate dividends since purchase date
             div = self.last_div_per_share.get(ticker, 0) * shares if h['purchase_date'] <= datetime.now() else 0.0
             roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
             target_allocation = self.target_allocations.get(ticker, 0.0)
@@ -275,7 +269,6 @@ class PortfolioTracker:
         return portfolio_df.sort_values(by='Market Value', ascending=False)
 
     def get_dashboard(self, current_prices=None):
-        """Generate dashboard summary metrics."""
         portfolio_df = self.get_portfolio(current_prices)
         total_portfolio_value = portfolio_df['Market Value'].sum()
         total_unrealized = portfolio_df['Gain/Loss'].sum()
@@ -294,12 +287,10 @@ class PortfolioTracker:
         }
 
     def get_cash_summary(self):
-        """Generate cash flow summary from transactions."""
         cash_flows = [t for t in self.transactions if t['type'] in ['Deposit', 'Dividend', 'Buy', 'Sell']]
         return pd.DataFrame(cash_flows)
 
     def get_invested_timeline(self):
-        """Get timeline of amount invested."""
         if not self.transactions:
             return pd.DataFrame()
         df = pd.DataFrame(self.transactions)
@@ -312,7 +303,6 @@ class PortfolioTracker:
         return df
 
     def get_profit_loss_timeline(self):
-        """Get timeline of profit/loss (approximate, using current prices)."""
         if not self.transactions:
             return pd.DataFrame()
         df = pd.DataFrame(self.transactions)
@@ -339,20 +329,17 @@ class PortfolioTracker:
         return pd.DataFrame(timeline)
 
     def get_cash_to_invest(self):
-        """Calculate cash to be invested (previous cash + new deposits)."""
         total_deposits = sum(d['amount'] for d in self.cash_deposits)
         return self.cash + total_deposits
 
     def update_target_allocations(self, new_allocations):
-        """Update target allocations and validate sum to 100%."""
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
             raise ValueError(f"Target allocations must sum to 100%, got {total}%")
-        self.target_allocations = new_allocations  # Replace, not update, to persist changes
-        st.session_state.tracker.target_allocations = new_allocations  # Persist in session state
+        self.target_allocations = new_allocations
+        st.session_state.tracker.target_allocations = new_allocations
 
     def calculate_distribution(self, cash):
-        """Calculate distribution of cash to stocks based on target allocations, with fees."""
         dist_list = []
         for ticker, target in self.target_allocations.items():
             if target == 0:
@@ -391,18 +378,14 @@ class PortfolioTracker:
         return pd.DataFrame(dist_list)
 
     def execute_distribution(self, dist_df, date):
-        """Execute the distribution by adding buy transactions."""
         for index, row in dist_df.iterrows():
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
-        # Clear cash_deposits after execution
         self.cash_deposits = []
 
 def initialize_tracker(tracker):
     """Initialize tracker with transactions from Excel."""
-    # Initial deposit
     tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
-    # Transactions
     transactions = [
         (45665, 'FECTC', 'Buy', 26, 84.14, 0),
         (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
@@ -460,14 +443,12 @@ def main():
     st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
     st.title("📈 Portfolio Dashboard")
 
-    # Initialize session state for tracker
     if 'tracker' not in st.session_state:
         st.session_state.tracker = PortfolioTracker()
         initialize_tracker(st.session_state.tracker)
 
     tracker = st.session_state.tracker
 
-    # Sidebar for navigation
     st.sidebar.header("Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
 
@@ -483,8 +464,7 @@ def main():
         col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
         col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
         col4.metric("% of Target Invested", f"{dashboard['% of Target Invested']:.2f}%")
-        
-        # Portfolio Value Bar Chart
+
         portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
             fig_bar = px.bar(
@@ -497,7 +477,6 @@ def main():
             )
             st.plotly_chart(fig_bar, use_container_width=True)
 
-            # Current vs Target Allocation Chart
             fig_alloc = px.bar(
                 portfolio_df,
                 x='Stock',
@@ -508,7 +487,6 @@ def main():
             )
             st.plotly_chart(fig_alloc, use_container_width=True)
 
-        # Timeline Chart of Amount Invested
         invested_df = tracker.get_invested_timeline()
         if not invested_df.empty:
             fig_invested = px.line(
@@ -519,7 +497,6 @@ def main():
             )
             st.plotly_chart(fig_invested, use_container_width=True)
 
-        # Timeline Chart of Profit/Loss
         pl_df = tracker.get_profit_loss_timeline()
         if not pl_df.empty:
             fig_pl = px.line(
@@ -552,10 +529,9 @@ def main():
                 },
                 use_container_width=True
             )
-            # Allocation Pie Chart
             fig_pie = px.pie(
                 portfolio_df,
-                values='Total Invested',  # Use Total Invested for pie chart
+                values='Total Invested',
                 names='Stock',
                 title='Portfolio Allocation (Based on Invested Amount)',
                 color_discrete_sequence=px.colors.qualitative.Plotly
@@ -580,7 +556,6 @@ def main():
             },
             use_container_width=True
         )
-        # Bar Chart for Allocation Comparison
         fig_dist = px.bar(
             dist_df,
             x='Stock',
@@ -591,7 +566,6 @@ def main():
         )
         st.plotly_chart(fig_dist, use_container_width=True)
 
-        # Edit Target Allocations
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
             st.write("Enter new target allocation percentages (must sum to 100%)")
@@ -630,7 +604,6 @@ def main():
             )
             st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
 
-        # Distribute Cash
         st.subheader("Add and Distribute Cash")
         with st.form("distribute_cash_form"):
             date = st.date_input("Date", value=datetime.now())
@@ -697,8 +670,8 @@ def main():
     elif page == "Cash":
         st.header("Cash Summary")
         tabs = st.tabs(["Cash Flow", "Add Cash", "Cash to be Invested"])
-        
-        with tabs[0]:  # Cash Flow
+
+        with tabs[0]:
             cash_df = tracker.get_cash_summary()
             if not cash_df.empty:
                 cash_df['date'] = cash_df['date'].dt.strftime('%Y-%m-%d')
@@ -718,7 +691,7 @@ def main():
             dashboard = tracker.get_dashboard()
             st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
 
-        with tabs[1]:  # Add Cash
+        with tabs[1]:
             with st.form("add_cash_form"):
                 date = st.date_input("Deposit Date", value=datetime.now())
                 amount = st.number_input("Deposit Amount (PKR)", min_value=0.0, step=100.0)
@@ -731,7 +704,7 @@ def main():
                     except ValueError as e:
                         st.error(f"Error: {e}")
 
-        with tabs[2]:  # Cash to be Invested
+        with tabs[2]:
             cash_to_invest = tracker.get_cash_to_invest()
             st.metric("Cash to be Invested", f"PKR {cash_to_invest:,.2f}")
             deposits_df = pd.DataFrame(tracker.cash_deposits)
