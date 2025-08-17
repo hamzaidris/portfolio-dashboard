@@ -827,7 +827,7 @@ def main():
     elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
-            ticker_options = sorted(ticker.current_prices.keys())
+            ticker_options = sorted(tracker.current_prices.keys())
             ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
             amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
             submit = st.form_submit_button("Add Dividend")
@@ -842,6 +842,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
