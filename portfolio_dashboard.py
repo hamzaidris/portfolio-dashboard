@@ -824,10 +824,10 @@ def main():
                 except ValueError as e:
                     st.error(f"Error: {e}")
 
-    '''elif page == "Add Dividend":
+    elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
-            ticker_options = sorted(tracker.current_prices.keys())
+            ticker_options = sorted(market_data.current_prices.keys())
             ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
             amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
             submit = st.form_submit_button("Add Dividend")
@@ -837,31 +837,12 @@ def main():
                     st.success("Dividend added successfully!")
                     st.experimental_rerun()
                 except ValueError as e:
-                    st.error(f"Error: {e}")'''
-
-# Page selection mechanism required
-page = st.sidebar.selectbox("Go to", ["Add Dividend"])  # This must come early
-
-# Tracker must be initialized somewhere
-class Tracker:
-    def add_dividend(self, ticker, amount):
-        # ... your tracker logic here
-        pass
-
-tracker = Tracker()  # Or however you create the tracker object
-
-def fetch_all_psx_tickers():
-    # ... function implementation as above ...
-    pass
-
-if page == "Add Dividend":
-    # ... code as above ...
-    pass
-
-
+                    st.error(f"Error: {e}")
+#market_data
 
 if __name__ == '__main__':
     main()
+
 
 
 
