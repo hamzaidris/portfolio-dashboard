@@ -824,9 +824,9 @@ def main():
                 except ValueError as e:
                     st.error(f"Error: {e}")'''
     from datetime import datetime
-import streamlit as st
 
-elif page == "Add Transaction":
+
+if page == "Add Transaction":
     st.header("Add Transaction")
 
     # Get the ticker list sorted
@@ -885,6 +885,7 @@ elif page == "Add Transaction":
 
 if __name__ == '__main__':
     main()
+
 
 
 
