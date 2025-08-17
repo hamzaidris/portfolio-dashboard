@@ -13,6 +13,9 @@ def excel_date_to_datetime(serial):
         raise ValueError(f"Invalid Excel serial date: {serial}")
 
 @st.cache_data(ttl=43200)  # Cache for 12 hours
+import requests
+import streamlit as st
+
 def fetch_psx_data():
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True},
@@ -37,7 +40,8 @@ def fetch_psx_data():
 
         try:
             response_json = response.json()
-            # Remove or comment out full response print to avoid clutter:
+
+            # Commented out to avoid full response print
             # st.write(f"Market data API response: {response_json}")
 
             if not isinstance(response_json, dict):
@@ -47,18 +51,17 @@ def fetch_psx_data():
             market_data = response_json.get("data", {})
 
             if isinstance(market_data, dict):
-                # market_data keys are markets (e.g., 'REG'), values are dicts of tickers
                 for market, tickers_dict in market_data.items():
-                    if isinstance(tickers_dict, dict):
-                        for ticker, info in tickers_dict.items():
-                            if ticker in updated_data and isinstance(info, dict):
-                                price = info.get("price")
-                                try:
-                                    updated_data[ticker]["price"] = float(price)
-                                except (ValueError, TypeError):
-                                    st.warning(f"Invalid price for {ticker}: {price}")
-                    else:
-                        st.warning(f"Unexpected structure for market {market} data.")
+                    # Skip keys that are not dicts, e.g. 'timestamp'
+                    if not isinstance(tickers_dict, dict):
+                        continue
+                    for ticker, info in tickers_dict.items():
+                        if ticker in updated_data and isinstance(info, dict):
+                            price = info.get("price")
+                            try:
+                                updated_data[ticker]["price"] = float(price)
+                            except (ValueError, TypeError):
+                                st.warning(f"Invalid price for {ticker}: {price}")
             else:
                 st.error(f"'data' field in API response is not a dict. Using fallback data only.")
                 return fallback_prices
@@ -72,6 +75,7 @@ def fetch_psx_data():
         return fallback_prices
 
     return updated_data
+
 
     symbols = ",".join(prices.keys())
     if symbols:
@@ -841,6 +845,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
