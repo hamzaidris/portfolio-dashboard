@@ -63,7 +63,7 @@ def fetch_psx_data():
                             try:
                                 prices[ticker] = {
                                     "price": float(price),
-                                    "sharia": False,  # Default, updated later
+                                    "sharia": False,  # Default, updated later via /api/yields
                                     "type": "Stock",
                                     "change": item.get("change", 0.0),
                                     "changePercent": item.get("changePercent", 0.0) * 100,  # Convert to percentage
@@ -98,7 +98,7 @@ def fetch_psx_data():
                     if ticker:
                         prices[ticker] = {
                             "price": 0.0,
-                            "sharia": False,
+                            "sharia": False,  # Default, updated later or via fallback
                             "type": "Stock",
                             "change": 0.0,
                             "changePercent": 0.0,
@@ -587,7 +587,10 @@ def main():
                     "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                     "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
                     "CGT (Potential)": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Sharia Compliant": st.column_config.CheckboxColumn()
+                    "Sharia Compliant": st.column_config.TextColumn(
+                        "Sharia Compliant",
+                        help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                    )
                 },
                 use_container_width=True
             )
@@ -614,7 +617,10 @@ def main():
                 "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                 "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                 "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
-                "Sharia Compliant": st.column_config.CheckboxColumn()
+                "Sharia Compliant": st.column_config.TextColumn(
+                    "Sharia Compliant",
+                    help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                )
             },
             use_container_width=True
         )
@@ -797,7 +803,7 @@ def main():
             {
                 'Ticker': k,
                 'Price': v['price'],
-                'Sharia Compliant': v['sharia'],
+                'Sharia Compliant': '✅' if v['sharia'] else '❌',
                 'Type': v.get('type', 'Stock'),
                 'Change': v.get('change', 0.0),
                 'Change %': v.get('changePercent', 0.0),
@@ -825,7 +831,7 @@ def main():
             if asset_type != "All":
                 filtered_df = filtered_df[filtered_df['Type'] == asset_type]
             if sharia_filter:
-                filtered_df = filtered_df[filtered_df['Sharia Compliant']]
+                filtered_df = filtered_df[filtered_df['Sharia Compliant'] == '✅']
             if not filtered_df.empty:
                 st.dataframe(
                     filtered_df,
@@ -838,7 +844,10 @@ def main():
                         "Low": st.column_config.NumberColumn(format="PKR %.2f"),
                         "Bid": st.column_config.NumberColumn(format="PKR %.2f"),
                         "Ask": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "Sharia Compliant": st.column_config.CheckboxColumn()
+                        "Sharia Compliant": st.column_config.TextColumn(
+                            "Sharia Compliant",
+                            help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                        )
                     },
                     use_container_width=True
                 )
@@ -899,7 +908,7 @@ def main():
         prices_list = [{
             'Ticker': k,
             'Price': v['price'],
-            'Sharia Compliant': v['sharia'],
+            'Sharia Compliant': '✅' if v['sharia'] else '❌',
             'Type': v.get('type', 'Stock'),
             'Change': v.get('change', 0.0),
             'Change %': v.get('changePercent', 0.0),
@@ -928,7 +937,10 @@ def main():
                     "Low": st.column_config.NumberColumn(format="PKR %.2f"),
                     "Bid": st.column_config.NumberColumn(format="PKR %.2f"),
                     "Ask": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Sharia Compliant": st.column_config.CheckboxColumn()
+                    "Sharia Compliant": st.column_config.TextColumn(
+                        "Sharia Compliant",
+                        help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                    )
                 },
                 num_rows="dynamic",
                 use_container_width=True,
@@ -939,7 +951,7 @@ def main():
                     ticker = row['Ticker']
                     tracker.current_prices[ticker] = {
                         'price': row['Price'],
-                        'sharia': row['Sharia Compliant'],
+                        'sharia': row['Sharia Compliant'] == '✅',
                         'type': row['Type'],
                         'change': row['Change'],
                         'changePercent': row['Change %'],
