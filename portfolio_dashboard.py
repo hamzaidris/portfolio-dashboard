@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -6,6 +7,7 @@ import requests
 import json
 from retrying import retry
 import pytz
+import os
 
 def is_working_hours():
     """Check if current time is within PSX working hours (9 AM–5 PM PKT, UTC+5)."""
@@ -76,7 +78,7 @@ def fetch_psx_data():
                                     "ask": item.get("ask", 0.0),
                                     "bidVol": item.get("bidVol", 0),
                                     "askVol": item.get("askVol", 0),
-                                    "timestamp": datetime.fromtimestamp(item.get("timestamp", 0)) if item.get("timestamp") else datetime.now()
+                                    "timestamp": datetime.fromtimestamp(item.get("timestamp", 0)) if item.get("timestamp") else datetime.now(pytz.UTC)
                                 }
                             except (ValueError, TypeError):
                                 st.warning(f"Invalid price for {ticker}: {price}")
@@ -111,7 +113,7 @@ def fetch_psx_data():
                             "ask": 0.0,
                             "bidVol": 0,
                             "askVol": 0,
-                            "timestamp": datetime.now()
+                            "timestamp": datetime.now(pytz.UTC)
                         }
             except json.JSONDecodeError:
                 st.error(f"Failed to parse DPS PSX response as JSON: {response.text}. Using fallback prices.")
@@ -149,6 +151,34 @@ def fetch_psx_data():
 
     return prices or fallback_prices
 
+def load_psx_data():
+    """Load PSX data from psx_data.json, fall back to fetch_psx_data if outdated or missing."""
+    try:
+        if os.path.exists("psx_data.json"):
+            with open("psx_data.json", "r") as f:
+                data = json.load(f)
+            timestamp = datetime.fromisoformat(data.get("timestamp", "1970-01-01T00:00:00+00:00"))
+            pkt_tz = pytz.timezone("Asia/Karachi")
+            today = datetime.now(pytz.UTC).astimezone(pkt_tz).date()
+            file_date = timestamp.astimezone(pkt_tz).date()
+            if file_date == today:
+                prices = data.get("data", {})
+                # Convert timestamps back to datetime objects
+                for ticker, info in prices.items():
+                    info["timestamp"] = datetime.fromisoformat(info["timestamp"])
+                st.info(f"Loaded PSX data from psx_data.json (timestamp: {timestamp})")
+                return prices
+            else:
+                st.warning(f"PSX data in psx_data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
+        else:
+            st.warning("psx_data.json not found. Fetching fresh data.")
+    except (json.JSONDecodeError, ValueError) as e:
+        st.error(f"Error loading psx_data.json: {e}. Fetching fresh data.")
+    
+    # Fallback to fetching fresh data
+    prices = fetch_psx_data()
+    return prices
+
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
     try:
@@ -164,7 +194,7 @@ class PortfolioTracker:
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
-        self.current_prices = fetch_psx_data()
+        self.current_prices = load_psx_data()
         self.target_allocations = {ticker: 0.0 for ticker in self.current_prices.keys()}
         self.target_investment = 410000.0
         self.last_div_per_share = {ticker: 0.0 for ticker in self.current_prices.keys()}
@@ -1002,3 +1032,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+```
