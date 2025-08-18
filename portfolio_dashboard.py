@@ -17,19 +17,18 @@ def fetch_psx_data():
     """Fetch stock prices and Sharia compliance from PSX Terminal APIs."""
     prices = {}
     fallback_prices = {
-        'MLCF': {'price': 83.48, 'sharia': True},
-        'GCIL': {'price': 26.70, 'sharia': True},
-        'MEBL': {'price': 374.98, 'sharia': True},
-        'OGDC': {'price': 272.69, 'sharia': True},
-        'GAL': {'price': 529.99, 'sharia': True},
-        'GHNI': {'price': 788.00, 'sharia': True},
-        'HALEON': {'price': 829.00, 'sharia': True},
-        'MARI': {'price': 629.60, 'sharia': True},
-        'GLAXO': {'price': 429.99, 'sharia': True},
-        'FECTC': {'price': 88.15, 'sharia': True},
-        'FFC': {'price': 454.10, 'sharia': False},
-        'MUGHAL': {'price': 64.01, 'sharia': False},
-        # Simulated mutual funds and commodities
+        'MLCF': {'price': 83.48, 'sharia': True, 'type': 'Stock'},
+        'GCIL': {'price': 26.70, 'sharia': True, 'type': 'Stock'},
+        'MEBL': {'price': 374.98, 'sharia': True, 'type': 'Stock'},
+        'OGDC': {'price': 272.69, 'sharia': True, 'type': 'Stock'},
+        'GAL': {'price': 529.99, 'sharia': True, 'type': 'Stock'},
+        'GHNI': {'price': 788.00, 'sharia': True, 'type': 'Stock'},
+        'HALEON': {'price': 829.00, 'sharia': True, 'type': 'Stock'},
+        'MARI': {'price': 629.60, 'sharia': True, 'type': 'Stock'},
+        'GLAXO': {'price': 429.99, 'sharia': True, 'type': 'Stock'},
+        'FECTC': {'price': 88.15, 'sharia': True, 'type': 'Stock'},
+        'FFC': {'price': 454.10, 'sharia': False, 'type': 'Stock'},
+        'MUGHAL': {'price': 64.01, 'sharia': False, 'type': 'Stock'},
         'MUF1': {'price': 150.00, 'sharia': True, 'type': 'Mutual Fund'},
         'COM1': {'price': 2500.00, 'sharia': False, 'type': 'Commodity'}
     }
@@ -149,6 +148,8 @@ class PortfolioTracker:
         }
         if trans_type == 'Buy':
             cost = quantity * price + fee
+            if cost > self.cash:
+                raise ValueError(f"Insufficient cash balance (PKR {self.cash:.2f}) for purchase of PKR {cost:.2f}.")
             self.cash -= cost
             if ticker not in self.holdings:
                 self.holdings[ticker] = {'shares': 0.0, 'total_cost': 0.0, 'purchase_date': date}
@@ -286,13 +287,13 @@ class PortfolioTracker:
             if abs(per_gain) > 0.1:  # 10% price change
                 self.add_alert(f"{ticker} has {'gained' if per_gain > 0 else 'lost'} {abs(per_gain*100):.2f}%")
         portfolio_df = pd.DataFrame(portfolio)
-        return portfolio_df.sort_values(by='Market Value', ascending=False)
+        return portfolio_df.sort_values(by='Market Value', ascending=False) if not portfolio_df.empty else pd.DataFrame()
 
     def get_dashboard(self, current_prices=None):
         portfolio_df = self.get_portfolio(current_prices)
-        total_portfolio_value = portfolio_df['Market Value'].sum()
-        total_unrealized = portfolio_df['Gain/Loss'].sum()
-        total_dividends = portfolio_df['Dividends'].sum()
+        total_portfolio_value = portfolio_df['Market Value'].sum() if not portfolio_df.empty else 0.0
+        total_unrealized = portfolio_df['Gain/Loss'].sum() if not portfolio_df.empty else 0.0
+        total_dividends = portfolio_df['Dividends'].sum() if not portfolio_df.empty else 0.0
         total_invested = self.initial_cash - self.cash
         total_roi = (total_portfolio_value + total_dividends) / total_invested * 100 if total_invested > 0 else 0.0
         return {
@@ -308,7 +309,7 @@ class PortfolioTracker:
 
     def get_cash_summary(self):
         cash_flows = [t for t in self.transactions if t['type'] in ['Deposit', 'Dividend', 'Buy', 'Sell']]
-        return pd.DataFrame(cash_flows)
+        return pd.DataFrame(cash_flows) if cash_flows else pd.DataFrame()
 
     def get_invested_timeline(self):
         if not self.transactions:
@@ -373,7 +374,7 @@ class PortfolioTracker:
                 'Delta Value': round(delta_value, 2),
                 'Suggested Shares': round(suggested_shares, 2)
             })
-        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
+        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False) if plan else pd.DataFrame()
 
     def get_fund_manager_report(self):
         """Generate a Fund Manager Report summarizing portfolio performance and recommendations."""
@@ -388,8 +389,8 @@ class PortfolioTracker:
                 'Cash Balance': f"PKR {self.cash:,.2f}",
                 'Sharia Compliant %': round(portfolio_df[portfolio_df['Sharia Compliant']]['Market Value'].sum() / dashboard['Total Portfolio Value'] * 100, 2) if dashboard['Total Portfolio Value'] > 0 else 0.0
             },
-            'Top Performers': portfolio_df.nlargest(3, 'ROI %')[['Stock', 'ROI %', 'Market Value']].to_dict('records'),
-            'Rebalancing Suggestions': plan_df[plan_df['Suggested Shares'].abs() > 0][['Stock', 'Suggested Shares', 'Delta Value']].to_dict('records'),
+            'Top Performers': portfolio_df.nlargest(3, 'ROI %')[['Stock', 'ROI %', 'Market Value']].to_dict('records') if not portfolio_df.empty else [],
+            'Rebalancing Suggestions': plan_df[plan_df['Suggested Shares'].abs() > 0][['Stock', 'Suggested Shares', 'Delta Value']].to_dict('records') if not plan_df.empty else [],
             'Alerts': self.get_alerts().to_dict('records')
         }
         return report
@@ -442,7 +443,7 @@ class PortfolioTracker:
                 'Net Invested': round(net_invested, 2),
                 'Leftover': round(leftover, 2)
             })
-        return pd.DataFrame(dist_list)
+        return pd.DataFrame(dist_list) if dist_list else pd.DataFrame()
 
     def execute_distribution(self, dist_df, date):
         for index, row in dist_df.iterrows():
@@ -451,64 +452,13 @@ class PortfolioTracker:
         self.cash_deposits = []
 
 def initialize_tracker(tracker):
-    tracker.add_transaction(excel_date_to_datetime(45665), None, 'Deposit', 414375.28, 0)
-    transactions = [
-        (45665, 'FECTC', 'Buy', 26, 84.14, 0),
-        (45665, 'FFC', 'Buy', 12, 457.75, 8.24),
-        (45665, 'GAL', 'Buy', 8, 510.47, 6.13),
-        (45665, 'GCIL', 'Buy', 280, 25.68, 0),
-        (45665, 'GHNI', 'Buy', 4, 805, 4.83),
-        (45665, 'GLAXO', 'Buy', 6, 426, 3.83),
-        (45665, 'HALEON', 'Buy', 3, 827.99, 3.73),
-        (45665, 'MARI', 'Buy', 4, 622.27, 0),
-        (45665, 'MLCF', 'Buy', 107, 81.82, 0),
-        (45665, 'MUGHAL', 'Buy', 150, 64, 14.4),
-        (45665, 'MEBL', 'Buy', 15, 362.76, 0),
-        (45665, 'OGDC', 'Buy', 23, 234.77, 0),
-        (45755, 'FECTC', 'Buy', 164, 85.14, 0),
-        (45755, 'FFC', 'Buy', 76, 456.9, 52.09),
-        (45755, 'GAL', 'Buy', 53, 518.99, 41.26),
-        (45755, 'GCIL', 'Buy', 1766, 25.79, 0),
-        (45755, 'GHNI', 'Buy', 26, 801, 31.24),
-        (45755, 'GLAXO', 'Buy', 41, 426, 26.2),
-        (45755, 'HALEON', 'Buy', 20, 837.85, 25.14),
-        (45755, 'MARI', 'Buy', 27, 632.02, 0),
-        (45755, 'MLCF', 'Buy', 667, 83.94, 0),
-        (45755, 'MUGHAL', 'Buy', 159, 64.02, 15.24),
-        (45755, 'OGDC', 'Buy', 134, 260.7, 0),
-        (45755, 'MEBL', 'Buy', 96, 363.58, 0),
-        (45785, 'FFC', 'Buy', 14, 469.9, 9.87),
-        (45785, 'HALEON', 'Buy', 7, 836, 8.78),
-        (45785, 'OGDC', 'Buy', 25, 258.7, 0),
-        (45816, 'FFC', 'Buy', 18, 460.9, 12.45),
-        (45816, 'MEBL', 'Buy', 23, 369.16, 0),
-        (45816, 'MUGHAL', 'Sell', 309, 64.01, 29.66),
-        (45877, 'FFC', 'Sell', 10, 454.1, 6.82),
-        (45877, 'FFC', 'Sell', 19, 454.1, 12.94),
-        (45877, 'FFC', 'Sell', 30, 454.1, 20.44),
-        (45877, 'FFC', 'Sell', 2, 454.1, 1.36),
-        (45877, 'FFC', 'Sell', 59, 454.1, 40.19),
-        (45969, 'FECTC', 'Buy', 32, 88.15, 0),
-        (45969, 'GAL', 'Buy', 12, 529.99, 9.54),
-        (45969, 'GCIL', 'Buy', 300, 26.7, 0),
-        (45969, 'GHNI', 'Buy', 7, 788, 8.27),
-        (45969, 'GLAXO', 'Buy', 6, 429.99, 3.87),
-        (45969, 'HALEON', 'Buy', 5, 829, 6.22),
-        (45969, 'MEBL', 'Buy', 15, 374.98, 0),
-        (45969, 'OGDC', 'Buy', 21, 272.69, 0),
-        (45969, 'MARI', 'Buy', 9, 629.6, 0),
-        (45969, 'MLCF', 'Buy', 115, 83.48, 0)
-    ]
-    for trans in transactions:
-        try:
-            tracker.add_transaction(*trans)
-        except ValueError as e:
-            st.error(f"Error adding transaction {trans}: {e}")
+    """Initialize tracker without default transactions."""
+    pass  # No default transactions or cash deposit
 
 def main():
-    st.set_page_config(page_title="Zar by Sarmaaya - Portfolio Dashboard", layout="wide")
-    st.title("📈 Zar by Sarmaaya - Portfolio Dashboard")
-    st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics. [Learn more](https://zar.sarmaaya.pk/)")
+    st.set_page_config(page_title="TrackerBazaar - Portfolio Dashboard", layout="wide")
+    st.title("📈 TrackerBazaar - Portfolio Dashboard")
+    st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics.")
 
     if 'tracker' not in st.session_state:
         st.session_state.tracker = PortfolioTracker()
@@ -561,27 +511,29 @@ def main():
             )
             st.plotly_chart(fig_alloc, use_container_width=True)
 
-        invested_df = tracker.get_invested_timeline()
-        if not invested_df.empty:
-            fig_invested = px.line(
-                invested_df,
-                x='date',
-                y='invested',
-                title='Amount Invested Over Time'
-            )
-            st.plotly_chart(fig_invested, use_container_width=True)
+            invested_df = tracker.get_invested_timeline()
+            if not invested_df.empty:
+                fig_invested = px.line(
+                    invested_df,
+                    x='date',
+                    y='invested',
+                    title='Amount Invested Over Time'
+                )
+                st.plotly_chart(fig_invested, use_container_width=True)
 
-        pl_df = tracker.get_profit_loss_timeline()
-        if not pl_df.empty:
-            fig_pl = px.line(
-                pl_df,
-                x='date',
-                y='profit_loss',
-                title='Profit/Loss Over Time (Approximate)'
-            )
-            st.plotly_chart(fig_pl, use_container_width=True)
+            pl_df = tracker.get_profit_loss_timeline()
+            if not pl_df.empty:
+                fig_pl = px.line(
+                    pl_df,
+                    x='date',
+                    y='profit_loss',
+                    title='Profit/Loss Over Time (Approximate)'
+                )
+                st.plotly_chart(fig_pl, use_container_width=True)
+            else:
+                st.info("Historical profit/loss data not available.")
         else:
-            st.info("Historical profit/loss data not available.")
+            st.info("Your portfolio is empty. Add transactions to get started.")
 
     elif page == "Portfolio":
         st.header("Portfolio Summary")
@@ -613,7 +565,7 @@ def main():
             )
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.info("No holdings in portfolio.")
+            st.info("No holdings in portfolio. Add transactions via 'Add Transaction'.")
 
     elif page == "Distribution":
         st.header("Distribution Analysis")
@@ -631,15 +583,18 @@ def main():
             },
             use_container_width=True
         )
-        fig_dist = px.bar(
-            dist_df,
-            x='Stock',
-            y=['Current Allocation %', 'Target Allocation %'],
-            title='Current vs Target Allocation',
-            barmode='group',
-            color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
-        )
-        st.plotly_chart(fig_dist, use_container_width=True)
+        if not dist_df.empty:
+            fig_dist = px.bar(
+                dist_df,
+                x='Stock',
+                y=['Current Allocation %', 'Target Allocation %'],
+                title='Current vs Target Allocation',
+                barmode='group',
+                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+            )
+            st.plotly_chart(fig_dist, use_container_width=True)
+        else:
+            st.info("No holdings to analyze. Add transactions to view distribution.")
 
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
@@ -678,6 +633,8 @@ def main():
                 use_container_width=True
             )
             st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
+        else:
+            st.info("No investment plan available. Add transactions to generate rebalancing suggestions.")
 
         st.subheader("Add and Distribute Cash")
         with st.form("distribute_cash_form"):
@@ -761,7 +718,7 @@ def main():
                     use_container_width=True
                 )
             else:
-                st.info("No cash transactions recorded.")
+                st.info("No cash transactions recorded. Add a deposit to start.")
             st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
             dashboard = tracker.get_dashboard()
             st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
@@ -842,7 +799,7 @@ def main():
                 use_container_width=True
             )
         else:
-            st.info("No holdings to display.")
+            st.info("No holdings to display. Add transactions to view top performers.")
         st.subheader("Rebalancing Suggestions")
         if report['Rebalancing Suggestions']:
             st.dataframe(
@@ -854,7 +811,7 @@ def main():
                 use_container_width=True
             )
         else:
-            st.info("No rebalancing suggestions at this time.")
+            st.info("No rebalancing suggestions at this time. Add transactions to generate suggestions.")
         st.subheader("Recent Alerts")
         if report['Alerts']:
             alerts_df = pd.DataFrame(report['Alerts'])
@@ -871,7 +828,7 @@ def main():
             alerts_df['date'] = alerts_df['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
             st.dataframe(alerts_df, use_container_width=True)
         else:
-            st.info("No notifications available.")
+            st.info("No notifications available. Add transactions to generate alerts.")
 
     elif page == "Transactions":
         st.header("Transaction History")
@@ -901,7 +858,7 @@ def main():
                 except ValueError as e:
                     st.error(f"Error: {e}")
         else:
-            st.info("No transactions recorded.")
+            st.info("No transactions recorded. Add transactions via 'Add Transaction'.")
 
     elif page == "Current Prices":
         st.header("Current Prices")
