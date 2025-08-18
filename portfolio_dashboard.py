@@ -121,38 +121,31 @@ def fetch_psx_data():
             return fallback_prices
 
     if prices:
-        symbols = ",".join(prices.keys())
-        try:
-            response = requests.get(f"https://psxterminal.com/api/yields/{symbols}", timeout=10)
-            response.raise_for_status()
+        for ticker in prices.keys():
             try:
-                response_json = response.json()
-                yields_data = response_json.get("data", [])
-                if isinstance(yields_data, dict):
-                    yields_data = [yields_data]
-                if not isinstance(yields_data, list):
-                    st.error(f"Yields 'data' field is not a list: {type(yields_data)}. Using available prices.")
-                    return prices or fallback_prices
-                for item in yields_data:
-                    if not isinstance(item, dict):
-                        st.warning(f"Skipping invalid yields data item: {item}")
+                response = requests.get(f"https://psxterminal.com/api/yields/{ticker}", timeout=10)
+                response.raise_for_status()
+                try:
+                    response_json = response.json()
+                    yields_data = response_json.get("data", {})
+                    if not isinstance(yields_data, dict):
+                        st.warning(f"Invalid yields data for {ticker}: {yields_data}")
                         continue
-                    ticker = item.get("symbol")
-                    price = item.get("price")
-                    is_non_compliant = item.get("isNonCompliant", True)
-                    if ticker and price is not None:
+                    price = yields_data.get("price")
+                    is_non_compliant = yields_data.get("isNonCompliant", True)
+                    if price is not None:
                         try:
                             prices[ticker]["price"] = float(price)
                             prices[ticker]["sharia"] = not is_non_compliant
                         except (ValueError, TypeError):
                             st.warning(f"Invalid price for {ticker}: {price}")
                             continue
-            except json.JSONDecodeError:
-                st.error(f"Failed to parse yields API response as JSON: {response.text}. Using available prices.")
-                return prices or fallback_prices
-        except requests.RequestException as e:
-            st.error(f"Error fetching yields data from PSX Terminal: {e}. Using available prices.")
-            return prices or fallback_prices
+                except json.JSONDecodeError:
+                    st.warning(f"Failed to parse yields API response for {ticker}: {response.text}")
+                    continue
+            except requests.RequestException as e:
+                st.warning(f"Error fetching yields data for {ticker}: {e}")
+                continue
 
     return prices or fallback_prices
 
@@ -395,8 +388,8 @@ class PortfolioTracker:
         return pd.DataFrame(timeline)
 
     def get_cash_to_invest(self):
-        total_deposits = sum(d['amount'] for d in self.cash_deposits)
-        return self.cash + total_deposits
+        cash_to_invest = sum(d['amount'] for d in self.cash_deposits)
+        return self.cash + cash_to_invest
 
     def get_investment_plan(self):
         """Generate investment plan with rebalancing suggestions."""
