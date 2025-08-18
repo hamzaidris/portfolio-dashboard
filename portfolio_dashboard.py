@@ -28,25 +28,27 @@ def fetch_psx_data():
         'GLAXO': {'price': 429.99, 'sharia': True},
         'FECTC': {'price': 88.15, 'sharia': True},
         'FFC': {'price': 454.10, 'sharia': False},
-        'MUGHAL': {'price': 64.01, 'sharia': False}
+        'MUGHAL': {'price': 64.01, 'sharia': False},
+        # Simulated mutual funds and commodities
+        'MUF1': {'price': 150.00, 'sharia': True, 'type': 'Mutual Fund'},
+        'COM1': {'price': 2500.00, 'sharia': False, 'type': 'Commodity'}
     }
     try:
         response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
         response.raise_for_status()
         try:
             response_json = response.json()
-            #st.write(f"Market data API response: {response_json}")  # Log for debugging
+            st.write(f"Market data API response: {response_json}")  # Log for debugging
             if not isinstance(response_json, dict):
                 st.error(f"Market data API returned unexpected type: {type(response_json)}. Using fallback prices.")
                 return fallback_prices
             market_data = response_json.get("data", [])
-            # Handle dictionary case
             if isinstance(market_data, dict):
                 for ticker, item in market_data.items():
                     price = item.get("price") if isinstance(item, dict) else None
                     if ticker and price is not None:
                         try:
-                            prices[ticker] = {"price": float(price), "sharia": False}
+                            prices[ticker] = {"price": float(price), "sharia": False, "type": "Stock"}
                         except (ValueError, TypeError):
                             st.warning(f"Invalid price for {ticker}: {price}")
                             continue
@@ -59,7 +61,7 @@ def fetch_psx_data():
                     price = item.get("price")
                     if ticker and price is not None:
                         try:
-                            prices[ticker] = {"price": float(price), "sharia": False}
+                            prices[ticker] = {"price": float(price), "sharia": False, "type": "Stock"}
                         except (ValueError, TypeError):
                             st.warning(f"Invalid price for {ticker}: {price}")
                             continue
@@ -120,35 +122,19 @@ class PortfolioTracker:
         self.initial_cash = 0.0
         self.current_prices = fetch_psx_data()
         self.target_allocations = {
-            'MLCF': 18.0,
-            'GCIL': 15.0,
-            'MEBL': 10.0,
-            'OGDC': 12.0,
-            'GAL': 11.0,
-            'GHNI': 10.0,
-            'HALEON': 7.0,
-            'MARI': 7.0,
-            'GLAXO': 6.0,
-            'FECTC': 4.0,
-            'FFC': 0.0,
-            'MUGHAL': 0.0
+            'MLCF': 18.0, 'GCIL': 15.0, 'MEBL': 10.0, 'OGDC': 12.0, 'GAL': 11.0,
+            'GHNI': 10.0, 'HALEON': 7.0, 'MARI': 7.0, 'GLAXO': 6.0, 'FECTC': 4.0,
+            'FFC': 0.0, 'MUGHAL': 0.0, 'MUF1': 0.0, 'COM1': 0.0
         }
         self.target_investment = 410000.0
         self.last_div_per_share = {
-            'MLCF': 10.0,
-            'GCIL': 11.0,
-            'MEBL': 13.0,
-            'OGDC': 14.0,
-            'GAL': 15.0,
-            'GHNI': 16.0,
-            'HALEON': 18.0,
-            'MARI': 19.0,
-            'GLAXO': 20.0,
-            'FECTC': 21.0,
-            'FFC': 21.0,
-            'MUGHAL': 17.0
+            'MLCF': 10.0, 'GCIL': 11.0, 'MEBL': 13.0, 'OGDC': 14.0, 'GAL': 15.0,
+            'GHNI': 16.0, 'HALEON': 18.0, 'MARI': 19.0, 'GLAXO': 20.0, 'FECTC': 21.0,
+            'FFC': 21.0, 'MUGHAL': 17.0, 'MUF1': 5.0, 'COM1': 0.0
         }
         self.cash_deposits = []
+        self.alerts = []  # Store notifications
+        self.filer_status = 'Filer'  # Default tax status
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         if isinstance(date, int):
@@ -172,20 +158,23 @@ class PortfolioTracker:
             self.holdings[ticker]['total_cost'] += cost
             trans['total'] = -cost
             trans['realized'] = 0.0
+            self.add_alert(f"Bought {quantity} shares of {ticker} at PKR {price} on {date.strftime('%Y-%m-%d')}")
         elif trans_type == 'Sell':
             if ticker not in self.holdings or self.holdings[ticker]['shares'] < quantity:
                 raise ValueError(f"Not enough shares of {ticker} to sell.")
             avg = self.holdings[ticker]['total_cost'] / self.holdings[ticker]['shares']
             gain = quantity * price - quantity * avg
             net = quantity * price - fee
-            self.realized_gain += gain - fee
-            self.cash += net
+            cgt = gain * (0.125 if self.filer_status == 'Filer' else 0.15)  # CGT: 12.5% for filers, 15% for non-filers
+            self.realized_gain += gain - fee - cgt
+            self.cash += net - cgt
             self.holdings[ticker]['total_cost'] -= quantity * avg
             self.holdings[ticker]['shares'] -= quantity
             if self.holdings[ticker]['shares'] <= 0:
                 del self.holdings[ticker]
-            trans['total'] = net
-            trans['realized'] = gain - fee
+            trans['total'] = net - cgt
+            trans['realized'] = gain - fee - cgt
+            self.add_alert(f"Sold {quantity} shares of {ticker} at PKR {price} on {date.strftime('%Y-%m-%d')}, CGT: PKR {cgt:.2f}")
         elif trans_type == 'Deposit':
             self.cash += quantity
             self.initial_cash += quantity
@@ -194,6 +183,7 @@ class PortfolioTracker:
             trans['realized'] = 0.0
             trans['price'] = 0.0
             trans['fee'] = 0.0
+            self.add_alert(f"Deposited PKR {quantity} on {date.strftime('%Y-%m-%d')}")
         else:
             raise ValueError("Unsupported transaction type.")
         self.transactions.append(trans)
@@ -213,6 +203,15 @@ class PortfolioTracker:
             'total': amount,
             'realized': 0.0
         })
+        self.add_alert(f"Received dividend of PKR {amount} for {ticker} on {datetime.now().strftime('%Y-%m-%d')}")
+
+    def add_alert(self, message):
+        """Add a notification to the alerts list."""
+        self.alerts.append({'date': datetime.now(), 'message': message})
+
+    def get_alerts(self):
+        """Return recent alerts."""
+        return pd.DataFrame(self.alerts[-10:])  # Show last 10 alerts
 
     def delete_transaction(self, index):
         if index < 0 or index >= len(self.transactions):
@@ -224,6 +223,7 @@ class PortfolioTracker:
             self.holdings[trans['ticker']]['total_cost'] += trans['total']
             if self.holdings[trans['ticker']]['shares'] <= 0:
                 del self.holdings[trans['ticker']]
+            self.add_alert(f"Deleted Buy transaction for {trans['quantity']} shares of {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
         elif trans['type'] == 'Sell':
             self.cash -= trans['total']
             self.realized_gain -= trans['realized']
@@ -233,13 +233,16 @@ class PortfolioTracker:
             avg = trans['price'] - gain / trans['quantity'] if trans['quantity'] > 0 else 0
             self.holdings[trans['ticker']]['shares'] += trans['quantity']
             self.holdings[trans['ticker']]['total_cost'] += trans['quantity'] * avg
+            self.add_alert(f"Deleted Sell transaction for {trans['quantity']} shares of {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
         elif trans['type'] == 'Deposit':
             self.cash -= trans['total']
             self.initial_cash -= trans['total']
             self.cash_deposits = [d for d in self.cash_deposits if d['amount'] != trans['total'] or d['date'] != trans['date']]
+            self.add_alert(f"Deleted Deposit of PKR {trans['total']} on {trans['date'].strftime('%Y-%m-%d')}")
         elif trans['type'] == 'Dividend':
             self.cash -= trans['total']
             self.dividends[trans['ticker']] -= trans['total']
+            self.add_alert(f"Deleted Dividend of PKR {trans['total']} for {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
 
     def get_portfolio(self, current_prices=None):
         portfolio = []
@@ -261,6 +264,7 @@ class PortfolioTracker:
             target_allocation = self.target_allocations.get(ticker, 0.0)
             sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
             current_allocation = (h['total_cost'] / total_invested * 100) if total_invested > 0 else 0.0
+            cgt = (market_value - h['total_cost']) * (0.125 if self.filer_status == 'Filer' else 0.15) if market_value > h['total_cost'] else 0.0
             portfolio.append({
                 'Stock': ticker,
                 'Shares': shares,
@@ -275,8 +279,12 @@ class PortfolioTracker:
                 'Target Allocation %': target_allocation,
                 'Sharia Compliant': sharia,
                 'Current Allocation %': round(current_allocation, 2),
-                'Allocation Delta %': round(current_allocation - target_allocation, 2)
+                'Allocation Delta %': round(current_allocation - target_allocation, 2),
+                'CGT (Potential)': round(cgt, 2)
             })
+            # Check for price movement alerts
+            if abs(per_gain) > 0.1:  # 10% price change
+                self.add_alert(f"{ticker} has {'gained' if per_gain > 0 else 'lost'} {abs(per_gain*100):.2f}%")
         portfolio_df = pd.DataFrame(portfolio)
         return portfolio_df.sort_values(by='Market Value', ascending=False)
 
@@ -367,12 +375,36 @@ class PortfolioTracker:
             })
         return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False)
 
+    def get_fund_manager_report(self):
+        """Generate a Fund Manager Report summarizing portfolio performance and recommendations."""
+        portfolio_df = self.get_portfolio()
+        dashboard = self.get_dashboard()
+        plan_df = self.get_investment_plan()
+        report = {
+            'Summary': {
+                'Total Portfolio Value': f"PKR {dashboard['Total Portfolio Value']:,.2f}",
+                'Total ROI %': f"{dashboard['Total ROI %']:.2f}%",
+                'Total Dividends': f"PKR {dashboard['Total Dividends']:,.2f}",
+                'Cash Balance': f"PKR {self.cash:,.2f}",
+                'Sharia Compliant %': round(portfolio_df[portfolio_df['Sharia Compliant']]['Market Value'].sum() / dashboard['Total Portfolio Value'] * 100, 2) if dashboard['Total Portfolio Value'] > 0 else 0.0
+            },
+            'Top Performers': portfolio_df.nlargest(3, 'ROI %')[['Stock', 'ROI %', 'Market Value']].to_dict('records'),
+            'Rebalancing Suggestions': plan_df[plan_df['Suggested Shares'].abs() > 0][['Stock', 'Suggested Shares', 'Delta Value']].to_dict('records'),
+            'Alerts': self.get_alerts().to_dict('records')
+        }
+        return report
+
     def update_target_allocations(self, new_allocations):
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
             raise ValueError(f"Target allocations must sum to 100%, got {total}%")
         self.target_allocations = new_allocations
         st.session_state.tracker.target_allocations = new_allocations
+        self.add_alert("Target allocations updated")
+
+    def update_filer_status(self, status):
+        self.filer_status = status
+        self.add_alert(f"Filer status updated to {status}")
 
     def calculate_distribution(self, cash):
         dist_list = []
@@ -474,8 +506,9 @@ def initialize_tracker(tracker):
             st.error(f"Error adding transaction {trans}: {e}")
 
 def main():
-    st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
-    st.title("📈 Portfolio Dashboard")
+    st.set_page_config(page_title="Zar by Sarmaaya - Portfolio Dashboard", layout="wide")
+    st.title("📈 Zar by Sarmaaya - Portfolio Dashboard")
+    st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics. [Learn more](https://zar.sarmaaya.pk/)")
 
     if 'tracker' not in st.session_state:
         st.session_state.tracker = PortfolioTracker()
@@ -484,7 +517,14 @@ def main():
     tracker = st.session_state.tracker
 
     st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Stock Explorer", "Fund Manager Report", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
+
+    # Filer Status in Sidebar
+    st.sidebar.header("Tax Settings")
+    filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
+    if filer_status != tracker.filer_status:
+        tracker.update_filer_status(filer_status)
+        st.experimental_rerun()
 
     if page == "Dashboard":
         st.header("Dashboard")
@@ -505,7 +545,7 @@ def main():
                 portfolio_df,
                 x='Stock',
                 y=['Market Value', 'Gain/Loss'],
-                title='Portfolio Value and Gains/Losses by Stock',
+                title='Portfolio Value and Gains/Losses by Asset',
                 barmode='group',
                 color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
             )
@@ -559,6 +599,7 @@ def main():
                     "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                     "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
                     "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
+                    "CGT (Potential)": st.column_config.NumberColumn(format="PKR %.2f"),
                     "Sharia Compliant": st.column_config.CheckboxColumn()
                 },
                 use_container_width=True
@@ -755,6 +796,83 @@ def main():
                 st.info("No new cash deposits recorded.")
             st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
 
+    elif page == "Stock Explorer":
+        st.header("Stock Explorer")
+        st.write("Search and explore investment opportunities across stocks, mutual funds, and commodities.")
+        search_term = st.text_input("Search by Ticker or Name")
+        asset_type = st.selectbox("Asset Type", ["All", "Stock", "Mutual Fund", "Commodity"])
+        sharia_filter = st.checkbox("Show only Sharia-compliant assets", value=False)
+        prices_df = pd.DataFrame([
+            {'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia'], 'Type': v.get('type', 'Stock')}
+            for k, v in tracker.current_prices.items()
+        ])
+        if search_term:
+            prices_df = prices_df[prices_df['Ticker'].str.contains(search_term, case=False, na=False)]
+        if asset_type != "All":
+            prices_df = prices_df[prices_df['Type'] == asset_type]
+        if sharia_filter:
+            prices_df = prices_df[prices_df['Sharia Compliant']]
+        if not prices_df.empty:
+            st.dataframe(
+                prices_df,
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Sharia Compliant": st.column_config.CheckboxColumn()
+                },
+                use_container_width=True
+            )
+        else:
+            st.info("No assets match the search criteria.")
+
+    elif page == "Fund Manager Report":
+        st.header("Fund Manager Report")
+        st.write("A comprehensive summary of your portfolio performance and recommendations.")
+        report = tracker.get_fund_manager_report()
+        st.subheader("Summary")
+        for key, value in report['Summary'].items():
+            st.metric(key, value)
+        st.subheader("Top Performers")
+        if report['Top Performers']:
+            st.dataframe(
+                pd.DataFrame(report['Top Performers']),
+                column_config={
+                    "Market Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "ROI %": st.column_config.NumberColumn(format="%.2f%")
+                },
+                use_container_width=True
+            )
+        else:
+            st.info("No holdings to display.")
+        st.subheader("Rebalancing Suggestions")
+        if report['Rebalancing Suggestions']:
+            st.dataframe(
+                pd.DataFrame(report['Rebalancing Suggestions']),
+                column_config={
+                    "Delta Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Suggested Shares": st.column_config.NumberColumn(format="%.2f")
+                },
+                use_container_width=True
+            )
+        else:
+            st.info("No rebalancing suggestions at this time.")
+        st.subheader("Recent Alerts")
+        if report['Alerts']:
+            alerts_df = pd.DataFrame(report['Alerts'])
+            alerts_df['date'] = alerts_df['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            st.dataframe(alerts_df, use_container_width=True)
+        else:
+            st.info("No recent alerts.")
+
+    elif page == "Notifications":
+        st.header("Notifications")
+        st.write("Real-time alerts for price movements, trades, and portfolio updates.")
+        alerts_df = tracker.get_alerts()
+        if not alerts_df.empty:
+            alerts_df['date'] = alerts_df['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            st.dataframe(alerts_df, use_container_width=True)
+        else:
+            st.info("No notifications available.")
+
     elif page == "Transactions":
         st.header("Transaction History")
         if tracker.transactions:
@@ -791,7 +909,7 @@ def main():
             new_data = fetch_psx_data()
             tracker.current_prices.update(new_data)
             st.success("PSX data fetched and updated!")
-        prices_list = [{'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia']} for k, v in tracker.current_prices.items()]
+        prices_list = [{'Ticker': k, 'Price': v['price'], 'Sharia Compliant': v['sharia'], 'Type': v.get('type', 'Stock')} for k, v in tracker.current_prices.items()]
         prices_df = pd.DataFrame(prices_list)
         edited_df = st.data_editor(prices_df, num_rows="dynamic", use_container_width=True, key="prices_editor")
         if st.button("Update Prices"):
@@ -799,7 +917,8 @@ def main():
                 ticker = row['Ticker']
                 price = row['Price']
                 sharia = row['Sharia Compliant']
-                tracker.current_prices[ticker] = {'price': price, 'sharia': sharia}
+                asset_type = row['Type']
+                tracker.current_prices[ticker] = {'price': price, 'sharia': sharia, 'type': asset_type}
             st.success("Prices updated successfully!")
 
     elif page == "Add Transaction":
@@ -841,4 +960,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
