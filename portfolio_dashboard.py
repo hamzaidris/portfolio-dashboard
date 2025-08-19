@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 def load_psx_data():
     """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
-    # Load Sharia-compliant stocks from kmi_shares.txt
     sharia_compliant = set()
     try:
         with open("kmi_shares.txt", "r") as f:
@@ -28,7 +27,6 @@ def load_psx_data():
         st.warning(f"Error reading kmi_shares.txt: {e}. Please check the file.")
         return {}
 
-    # Load market data from market-data.json
     try:
         with open("market-data.json", "r") as f:
             market_data = json.load(f)
@@ -55,7 +53,6 @@ def load_psx_data():
                 price = item.get("price")
                 if ticker and price is not None:
                     try:
-                        # Map ticker to Sharia-compliant name if possible
                         sharia_name = next((name for name in sharia_compliant if ticker in name or name.lower().replace(" ", "") == ticker.lower()), ticker)
                         is_sharia = sharia_name in sharia_compliant
                         prices[ticker] = {
@@ -362,44 +359,6 @@ class PortfolioTracker:
         cash_to_invest = sum(d['amount'] for d in self.cash_deposits)
         return self.cash + cash_to_invest
 
-    def get_investment_plan(self):
-        portfolio_df = self.get_portfolio()
-        if portfolio_df.empty:
-            return pd.DataFrame()
-        total_value = portfolio_df['Market Value'].sum() + self.cash
-        plan = []
-        for ticker, target in self.target_allocations.items():
-            current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
-            target_value = total_value * (target / 100)
-            delta_value = target_value - current_value
-            current_price = self.current_prices.get(ticker, {'price': 0.0})['price']
-            suggested_shares = delta_value / current_price if current_price > 0 else 0
-            plan.append({
-                'Stock': ticker,
-                'Target Allocation %': target,
-                'Current Value': round(current_value, 2),
-                'Target Value': round(target_value, 2),
-                'Delta Value': round(delta_value, 2),
-                'Suggested Shares': round(suggested_shares, 2)
-            })
-        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False) if plan else pd.DataFrame()
-
-    def update_target_allocations(self, new_allocations):
-        total = sum(new_allocations.values())
-        if abs(total - 100.0) > 0.01:
-            raise ValueError(f"Target allocations must sum to 100%, got {total}%")
-        for ticker in self.current_prices.keys():
-            self.target_allocations[ticker] = new_allocations.get(ticker, 0.0)
-        st.session_state.tracker.target_allocations = self.target_allocations
-        self.add_alert("Target allocations updated")
-        st.session_state.update_allocations = True
-
-    def update_filer_status(self, status):
-        if status != self.filer_status:
-            self.filer_status = status
-            self.add_alert(f"Filer status updated to {status}")
-            st.session_state.update_filer_status = True
-
     def calculate_distribution(self, cash):
         dist_list = []
         for ticker, target in self.target_allocations.items():
@@ -443,6 +402,22 @@ class PortfolioTracker:
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
         self.cash_deposits = []
+
+    def update_target_allocations(self, new_allocations):
+        total = sum(new_allocations.values())
+        if abs(total - 100.0) > 0.01:
+            raise ValueError(f"Target allocations must sum to 100%, got {total}%")
+        for ticker in self.current_prices.keys():
+            self.target_allocations[ticker] = new_allocations.get(ticker, 0.0)
+        st.session_state.tracker.target_allocations = self.target_allocations
+        self.add_alert("Target allocations updated")
+        st.session_state.update_allocations = True
+
+    def update_filer_status(self, status):
+        if status != self.filer_status:
+            self.filer_status = status
+            self.add_alert(f"Filer status updated to {status}")
+            st.session_state.update_filer_status = True
 
 def initialize_tracker(tracker):
     """Initialize tracker without default transactions."""
@@ -570,7 +545,6 @@ def main():
 
     elif page == "Distribution":
         st.header("Distribution Analysis")
-        # Create distribution DataFrame from target allocations
         dist_list = [
             {'Stock': ticker, 'Target Allocation %': alloc}
             for ticker, alloc in tracker.target_allocations.items() if alloc > 0
@@ -666,30 +640,57 @@ def main():
                     st.error(f"Error: {e}")
 
         st.subheader("Sample Distribution")
-        with st.form("distribute_cash_form"):
+        st.info("This section calculates a preview of how cash would be distributed based on target allocations, including fees. No cash is added or transactions executed.")
+        with st.form("sample_distribution_form"):
             date = st.date_input("Date", value=datetime.now())
-            cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
+            cash = st.number_input("Cash to Simulate Distribution (PKR)", min_value=0.0, step=100.0)
             sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
             submit_calc = st.form_submit_button("Calculate Sample Distribution")
         if submit_calc:
-            if sharia_only:
-                sharia_allocations = {
-                    ticker: alloc for ticker, alloc in tracker.target_allocations.items()
-                    if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
-                }
-                if not sharia_allocations:
-                    st.error("No Sharia-compliant stocks with positive allocations.")
-                else:
-                    total_alloc = sum(sharia_allocations.values())
-                    if total_alloc == 0:
-                        st.error("Total allocation for Sharia-compliant stocks is 0.")
+            if cash <= 0:
+                st.error("Please enter a positive cash amount.")
+            elif not tracker.target_allocations or sum(tracker.target_allocations.values()) == 0:
+                st.error("No target allocations set. Please set allocations in 'Edit Target Allocations'.")
+            else:
+                if sharia_only:
+                    sharia_allocations = {
+                        ticker: alloc for ticker, alloc in tracker.target_allocations.items()
+                        if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
+                    }
+                    if not sharia_allocations:
+                        st.error("No Sharia-compliant stocks with positive allocations.")
                     else:
-                        normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
-                        temp_tracker = PortfolioTracker()
-                        temp_tracker.target_allocations = normalized_allocations
-                        temp_tracker.current_prices = tracker.current_prices
-                        dist_df = temp_tracker.calculate_distribution(cash)
-                        st.session_state.dist_df = dist_df
+                        total_alloc = sum(sharia_allocations.values())
+                        if total_alloc == 0:
+                            st.error("Total allocation for Sharia-compliant stocks is 0.")
+                        else:
+                            normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                            temp_tracker = PortfolioTracker()
+                            temp_tracker.target_allocations = normalized_allocations
+                            temp_tracker.current_prices = tracker.current_prices
+                            temp_tracker.broker_fees = tracker.broker_fees
+                            dist_df = temp_tracker.calculate_distribution(cash)
+                            st.session_state.dist_df = dist_df
+                            if not dist_df.empty:
+                                st.dataframe(
+                                    dist_df,
+                                    column_config={
+                                        "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                                        "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                                        "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                                        "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                                        "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                                        "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                                    },
+                                    use_container_width=True
+                                )
+                                st.write("Note: This is a sample distribution. To execute purchases, go to 'Add Transaction' and manually add Buy transactions.")
+                            else:
+                                st.info("No distribution possible. Ensure valid stock prices and allocations.")
+                else:
+                    dist_df = tracker.calculate_distribution(cash)
+                    st.session_state.dist_df = dist_df
+                    if not dist_df.empty:
                         st.dataframe(
                             dist_df,
                             column_config={
@@ -702,21 +703,9 @@ def main():
                             },
                             use_container_width=True
                         )
-            else:
-                dist_df = tracker.calculate_distribution(cash)
-                st.session_state.dist_df = dist_df
-                st.dataframe(
-                    dist_df,
-                    column_config={
-                        "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "Price": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "SST": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
-                    },
-                    use_container_width=True
-                )
+                        st.write("Note: This is a sample distribution. To execute purchases, go to 'Add Transaction' and manually add Buy transactions.")
+                    else:
+                        st.info("No distribution possible. Ensure valid stock prices and allocations.")
 
     elif page == "Cash":
         st.header("Cash Summary")
@@ -767,7 +756,7 @@ def main():
                 )
             else:
                 st.info("No new cash deposits recorded.")
-            st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
+            st.write(f"Current Cash Balance: PKR {tracker.cash:,.2f}")
 
         with tabs[3]:
             st.subheader("Withdraw Cash")
@@ -1013,30 +1002,30 @@ def main():
         st.write("Step-by-step guide to get started with TrackerBazaar:")
 
         st.subheader("1. Load Data")
-        st.write("Ensure market-data.json and kmi_shares.txt are in the repository. These files provide stock prices and Sharia compliance.")
+        st.write("Ensure market-data.json (stock prices) and kmi_shares.txt (Sharia compliance) are in the project directory. These are loaded automatically on startup.")
 
         st.subheader("2. Add Cash")
-        st.write("Go to the 'Cash' page, use 'Add Cash' to deposit funds into your portfolio. This increases your cash balance for investments.")
+        st.write("Go to 'Cash' > 'Add Cash'. Enter the deposit amount and date to add funds to your portfolio. This updates your cash balance.")
 
         st.subheader("3. Set Target Allocations")
-        st.write("Go to the 'Distribution' page, select stocks in 'Edit Target Allocations', and set percentages (must sum to 100%). Update to save.")
+        st.write("Go to 'Distribution' > 'Edit Target Allocations'. Select stocks and assign percentages (must sum to 100%). Save to set your investment goals.")
 
-        st.subheader("4. Calculate Sample Distribution")
-        st.write("In 'Distribution', input cash in 'Sample Distribution' to see how it would be allocated based on targets (with fees). This is a preview; it doesn't execute buys.")
+        st.subheader("4. Preview Sample Distribution")
+        st.write("In 'Distribution' > 'Sample Distribution', enter a cash amount to see how it would be allocated across stocks based on targets, including fees. This is a preview only; no cash is added or transactions executed.")
 
         st.subheader("5. Add Transactions")
-        st.write("Go to 'Add Transaction' to buy/sell stocks, deposit/withdraw cash. Transactions update your portfolio automatically.")
+        st.write("Go to 'Add Transaction' to record Buy/Sell stocks, Deposit/Withdraw cash. Use the sample distribution as a guide for Buy transactions to align with targets.")
 
         st.subheader("6. Monitor Portfolio")
-        st.write("View 'Dashboard' for overall metrics, 'Portfolio' for holdings details, 'Stock Explorer' for market data, and 'Notifications' for alerts.")
+        st.write("Check 'Dashboard' for key metrics (e.g., ROI, portfolio value), 'Portfolio' for holdings details, 'Stock Explorer' for market data, and 'Notifications' for alerts.")
 
         st.subheader("7. Rebalance and Edit")
-        st.write("Use 'Distribution' to edit/remove allocations, 'Broker Fees' to customize fees, and 'Current Prices' to update stock prices.")
+        st.write("Use 'Distribution' to adjust allocations, 'Broker Fees' to update fee rates, and 'Current Prices' to modify stock prices if needed.")
 
         st.subheader("8. Withdraw Cash")
-        st.write("In 'Cash', use 'Withdraw Cash' to remove funds from your portfolio.")
+        st.write("In 'Cash' > 'Withdraw Cash', enter an amount to remove funds from your portfolio.")
 
-        st.write("Repeat steps 3-5 for rebalancing as needed. Track your journey with charts on the Dashboard.")
+        st.write("Repeat steps 3-5 to rebalance as market conditions or goals change. Use Dashboard charts to track progress.")
 
 if __name__ == '__main__':
     main()
