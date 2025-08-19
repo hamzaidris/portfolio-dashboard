@@ -150,43 +150,92 @@ def fetch_psx_data():
 
     return prices or fallback_prices
 
-def load_psx_data():
-    """Load PSX data from market-data.json, fall back to fetch_psx_data if outdated or missing."""
+def save_psx_data(prices):
+    """Save PSX data to market-data.json in a consistent format."""
+    data = {
+        "timestamp": datetime.now(pytz.UTC).isoformat(),
+        "data": {
+            ticker: {**info, "timestamp": info["timestamp"].isoformat() if isinstance(info["timestamp"], datetime) else datetime.now(pytz.UTC).isoformat()}
+            for ticker, info in prices.items()
+        }
+    }
     try:
-        if os.path.exists("market-data.json"):
-            with open("market-data.json", "r") as f:
-                data = json.load(f)
-            timestamp_str = data.get("timestamp", "1970-01-01T00:00:00+00:00")
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-            except ValueError as e:
-                st.error(f"Invalid timestamp format in market-data.json: {timestamp_str}. Fetching fresh data.")
-                prices = fetch_psx_data()
-                return prices
-            pkt_tz = pytz.timezone("Asia/Karachi")
-            today = datetime.now(pytz.UTC).astimezone(pkt_tz).date()
-            file_date = timestamp.astimezone(pkt_tz).date()
-            if file_date == today:
-                prices = data.get("data", {})
-                # Convert timestamps back to datetime objects
-                for ticker, info in prices.items():
-                    try:
-                        info["timestamp"] = datetime.fromisoformat(info["timestamp"])
-                    except (ValueError, TypeError):
-                        st.warning(f"Invalid timestamp for {ticker} in market-data.json. Setting to current time.")
-                        info["timestamp"] = datetime.now(pytz.UTC)
-                st.info(f"Loaded PSX data from market-data.json (timestamp: {timestamp})")
-                return prices
-            else:
-                st.warning(f"PSX data in market-data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
-        else:
+        with open("market-data.json", "w") as f:
+            json.dump(data, f)
+        st.info("Saved fetched PSX data to market-data.json")
+    except Exception as e:
+        st.warning(f"Failed to save market-data.json: {e}")
+
+def load_psx_data():
+    """Load PSX data from market-data.json, fall back to fetch_psx_data if outdated or invalid."""
+    try:
+        if not os.path.exists("market-data.json"):
             st.warning("market-data.json not found. Fetching fresh data.")
-    except (json.JSONDecodeError, ValueError) as e:
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        with open("market-data.json", "r") as f:
+            data = json.load(f)
+
+        # Validate JSON structure
+        if not isinstance(data, dict) or "data" not in data or "timestamp" not in data:
+            st.error("Invalid market-data.json structure: missing 'data' or 'timestamp'. Fetching fresh data.")
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        timestamp_str = data.get("timestamp", "1970-01-01T00:00:00+00:00")
+        if not isinstance(timestamp_str, str):
+            st.error(f"Invalid timestamp type in market-data.json: {type(timestamp_str)}. Fetching fresh data.")
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+        except (ValueError, TypeError) as e:
+            st.error(f"Invalid timestamp format in market-data.json: {timestamp_str}. Error: {e}. Fetching fresh data.")
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        pkt_tz = pytz.timezone("Asia/Karachi")
+        today = datetime.now(pytz.UTC).astimezone(pkt_tz).date()
+        file_date = timestamp.astimezone(pkt_tz).date()
+        if file_date != today:
+            st.warning(f"PSX data in market-data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        prices = data.get("data", {})
+        if not isinstance(prices, dict):
+            st.error(f"Invalid 'data' field in market-data.json: expected dict, got {type(prices)}. Fetching fresh data.")
+            prices = fetch_psx_data()
+            save_psx_data(prices)
+            return prices
+
+        # Convert timestamps back to datetime objects
+        for ticker, info in prices.items():
+            try:
+                if isinstance(info.get("timestamp"), str):
+                    info["timestamp"] = datetime.fromisoformat(info["timestamp"])
+                else:
+                    st.warning(f"Invalid or missing timestamp for {ticker} in market-data.json. Setting to current time.")
+                    info["timestamp"] = datetime.now(pytz.UTC)
+            except (ValueError, TypeError):
+                st.warning(f"Invalid timestamp format for {ticker} in market-data.json. Setting to current time.")
+                info["timestamp"] = datetime.now(pytz.UTC)
+
+        st.info(f"Loaded PSX data from market-data.json (timestamp: {timestamp})")
+        return prices
+
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
         st.error(f"Error loading market-data.json: {e}. Fetching fresh data.")
-    
-    # Fallback to fetching fresh data
-    prices = fetch_psx_data()
-    return prices
+        prices = fetch_psx_data()
+        save_psx_data(prices)
+        return prices
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -936,6 +985,7 @@ def main():
             tracker.current_prices.update(new_data)
             tracker.target_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in new_data.keys()}
             tracker.last_div_per_share = {ticker: tracker.last_div_per_share.get(ticker, 0.0) for ticker in new_data.keys()}
+            save_psx_data(new_data)  # Save updated data
             st.success("PSX data fetched and updated!")
         prices_list = [{
             'Ticker': k,
@@ -998,6 +1048,7 @@ def main():
                         'askVol': row['Ask Volume'],
                         'timestamp': pd.to_datetime(row['Timestamp'])
                     }
+                save_psx_data(tracker.current_prices)  # Save updated prices
                 st.success("Prices updated successfully!")
         else:
             st.info("No stock data available.")
