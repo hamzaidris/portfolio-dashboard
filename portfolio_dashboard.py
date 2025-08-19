@@ -156,7 +156,13 @@ def load_psx_data():
         if os.path.exists("market-data.json"):
             with open("market-data.json", "r") as f:
                 data = json.load(f)
-            timestamp = datetime.fromisoformat(data.get("timestamp", "1970-01-01T00:00:00+00:00"))
+            timestamp_str = data.get("timestamp", "1970-01-01T00:00:00+00:00")
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except ValueError as e:
+                st.error(f"Invalid timestamp format in market-data.json: {timestamp_str}. Fetching fresh data.")
+                prices = fetch_psx_data()
+                return prices
             pkt_tz = pytz.timezone("Asia/Karachi")
             today = datetime.now(pytz.UTC).astimezone(pkt_tz).date()
             file_date = timestamp.astimezone(pkt_tz).date()
@@ -164,7 +170,11 @@ def load_psx_data():
                 prices = data.get("data", {})
                 # Convert timestamps back to datetime objects
                 for ticker, info in prices.items():
-                    info["timestamp"] = datetime.fromisoformat(info["timestamp"])
+                    try:
+                        info["timestamp"] = datetime.fromisoformat(info["timestamp"])
+                    except (ValueError, TypeError):
+                        st.warning(f"Invalid timestamp for {ticker} in market-data.json. Setting to current time.")
+                        info["timestamp"] = datetime.now(pytz.UTC)
                 st.info(f"Loaded PSX data from market-data.json (timestamp: {timestamp})")
                 return prices
             else:
@@ -1031,5 +1041,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
