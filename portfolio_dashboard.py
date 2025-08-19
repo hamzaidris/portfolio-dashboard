@@ -11,8 +11,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+@st.cache_data
 def load_psx_data():
-    """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
+    """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt with caching."""
     sharia_compliant = set()
     try:
         with open("kmi_shares.txt", "r") as f:
@@ -380,3 +381,220 @@ class PortfolioTracker:
         for ticker, target in self.target_allocations.items():
             if target == 0:
                 continue
+            dist = cash * (target / 100)
+            P = self.current_prices.get(ticker, {'price': 0.0})['price']
+            if P == 0.0:
+                continue
+            if P <= 20:
+                fee_per = self.broker_fees['low_price_fee']
+                sst_per = self.broker_fees['sst_low_price']
+                total_per = P + fee_per + sst_per
+                U = int(dist / total_per)
+                fee = U * fee_per
+                sst = U * sst_per
+            else:
+                brokerage_rate = self.broker_fees['brokerage_rate']
+                sst_rate = self.broker_fees['sst_rate']
+                total_rate = brokerage_rate + (brokerage_rate * sst_rate)
+                investable = dist / (1 + total_rate)
+                U = int(investable / P)
+                fee = U * P * brokerage_rate
+                sst = fee * sst_rate
+            net_invested = U * P + fee + sst
+            leftover = dist - net_invested
+            dist_list.append({
+                'Stock': ticker,
+                'Distributed': round(dist, 2),
+                'Price': P,
+                'Units': U,
+                'Fee': round(fee, 2),
+                'SST': round(sst, 2),
+                'Net Invested': round(net_invested, 2),
+                'Leftover': round(leftover, 2)
+            })
+        return pd.DataFrame(dist_list) if dist_list else pd.DataFrame()
+
+    def execute_distribution(self, dist_df, date):
+        for index, row in dist_df.iterrows():
+            if row['Units'] > 0:
+                self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
+        self.cash_deposits = []
+
+def initialize_tracker(tracker):
+    """Initialize tracker without default transactions."""
+    pass
+
+def main():
+    st.set_page_config(page_title="TrackerBazaar - Portfolio Dashboard", layout="wide")
+    st.title("📈 TrackerBazaar - Portfolio Dashboard")
+    st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics.")
+
+    if 'tracker' not in st.session_state:
+        st.session_state.tracker = PortfolioTracker()
+        initialize_tracker(st.session_state.tracker)
+        st.session_state.update_allocations = False
+        st.session_state.update_filer_status = False
+        st.session_state.data_changed = False  # Flag to track data changes
+
+    tracker = st.session_state.tracker
+
+    st.sidebar.header("Navigation")
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide"])
+
+    st.sidebar.header("Tax Settings")
+    filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
+    if filer_status != tracker.filer_status:
+        tracker.update_filer_status(filer_status)
+
+    if st.session_state.get('update_filer_status', False) or st.session_state.get('update_allocations', False) or st.session_state.get('data_changed', False):
+        st.session_state.update_filer_status = False
+        st.session_state.update_allocations = False
+        st.session_state.data_changed = False
+        st.rerun()
+
+    if page == "Dashboard":
+        st.header("Dashboard")
+        if 'dashboard_data' not in st.session_state or st.session_state.data_changed:
+            dashboard = tracker.get_dashboard()
+            st.session_state.dashboard_data = dashboard
+        else:
+            dashboard = st.session_state.dashboard_data
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
+        col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
+        col3.metric("Total Dividends", f"PKR {dashboard['Total Dividends']:,.2f}")
+        col4.metric("Cash Balance", f"PKR {tracker.cash:,.2f}")
+        col1.metric("Total Invested", f"PKR {dashboard['Total Invested']:,.2f}")
+        col2.metric("Total Realized Gain", f"PKR {dashboard['Total Realized Gain']:,.2f}")
+        col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
+        col4.metric("% of Target Invested", f"{dashboard['% of Target Invested']:.2f}%")
+
+        portfolio_df = tracker.get_portfolio() if 'portfolio_df' not in st.session_state or st.session_state.data_changed else st.session_state.portfolio_df
+        if not portfolio_df.empty:
+            if st.session_state.data_changed or 'dashboard_charts' not in st.session_state:
+                fig_bar = px.bar(
+                    portfolio_df,
+                    x='Stock',
+                    y=['Market Value', 'Gain/Loss'],
+                    title='Portfolio Value and Gains/Losses by Asset',
+                    barmode='group',
+                    color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
+                )
+                fig_alloc = px.bar(
+                    portfolio_df,
+                    x='Stock',
+                    y=['Current Allocation %', 'Target Allocation %'],
+                    title='Current vs Target Allocation',
+                    barmode='group',
+                    color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+                )
+                invested_df = tracker.get_invested_timeline()
+                fig_invested = px.line(invested_df, x='date', y='invested', title='Amount Invested Over Time') if not invested_df.empty else None
+                pl_df = tracker.get_profit_loss_timeline()
+                fig_pl = px.line(pl_df, x='date', y='profit_loss', title='Profit/Loss Over Time (Approximate)') if not pl_df.empty else None
+                st.session_state.dashboard_charts = {'bar': fig_bar, 'alloc': fig_alloc, 'invested': fig_invested, 'pl': fig_pl}
+                st.session_state.portfolio_df = portfolio_df
+            st.plotly_chart(st.session_state.dashboard_charts['bar'], use_container_width=True)
+            st.plotly_chart(st.session_state.dashboard_charts['alloc'], use_container_width=True)
+            if st.session_state.dashboard_charts['invested']:
+                st.plotly_chart(st.session_state.dashboard_charts['invested'], use_container_width=True)
+            if st.session_state.dashboard_charts['pl']:
+                st.plotly_chart(st.session_state.dashboard_charts['pl'], use_container_width=True)
+            else:
+                st.info("Historical profit/loss data not available.")
+        else:
+            st.info("Your portfolio is empty. Add transactions to get started.")
+
+    elif page == "Portfolio":
+        st.header("Portfolio Summary")
+        if 'portfolio_df' not in st.session_state or st.session_state.data_changed:
+            portfolio_df = tracker.get_portfolio()
+            st.session_state.portfolio_df = portfolio_df
+        else:
+            portfolio_df = st.session_state.portfolio_df
+        if not portfolio_df.empty:
+            portfolio_df.index = pd.RangeIndex(start=1, stop=len(portfolio_df) + 1, step=1)
+            portfolio_df.index.name = "SNo"
+            st.dataframe(
+                portfolio_df,
+                column_config={
+                    "Market Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Total Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Gain/Loss": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Dividends": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "% Gain": st.column_config.NumberColumn(format="%.2f%"),
+                    "ROI %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
+                    "CGT (Potential)": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Sharia Compliant": st.column_config.TextColumn(
+                        "Sharia Compliant",
+                        help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                    )
+                },
+                use_container_width=True
+            )
+            if st.session_state.data_changed or 'portfolio_pie' not in st.session_state:
+                fig_pie = px.pie(
+                    portfolio_df,
+                    values='Total Invested',
+                    names='Stock',
+                    title='Portfolio Allocation (Based on Invested Amount)',
+                    color_discrete_sequence=px.colors.qualitative.Plotly
+                )
+                st.session_state.portfolio_pie = fig_pie
+            st.plotly_chart(st.session_state.portfolio_pie, use_container_width=True)
+        else:
+            st.info("No holdings in portfolio. Add transactions via 'Add Transaction'.")
+
+    elif page == "Distribution":
+        st.header("Distribution Analysis")
+        if 'dist_df' not in st.session_state or st.session_state.data_changed:
+            dist_list = [
+                {'Stock': ticker, 'Target Allocation %': alloc}
+                for ticker, alloc in tracker.target_allocations.items() if alloc > 0
+            ]
+            dist_df = pd.DataFrame(dist_list)
+            st.session_state.dist_df = dist_df
+        else:
+            dist_df = st.session_state.dist_df
+        if not dist_df.empty:
+            dist_df['Select'] = False
+            edited_df = st.data_editor(
+                dist_df,
+                column_config={
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Select": st.column_config.CheckboxColumn()
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            selected = edited_df[edited_df['Select']].index.tolist()
+            if selected:
+                selected_ticker = edited_df.loc[selected[0], 'Stock']
+                st.subheader(f"Edit or Remove {selected_ticker}")
+                new_percentage = st.number_input(
+                    f"New Percentage for {selected_ticker} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=tracker.target_allocations.get(selected_ticker, 0.0),
+                    step=0.1,
+                    key=f"edit_alloc_{selected_ticker}"
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Update Percentage"):
+                        new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                        new_allocations[selected_ticker] = new_percentage
+                        try:
+                            tracker.update_target_allocations(new_allocations)
+                            st.success(f"Percentage for {selected_ticker} updated to {new_percentage}%")
+                            st.session_state.data_changed = True
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(f"Error: {e}")
+                with col2:
+                    if st.button("Remove Stock"):
+                        new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                        new_allocations[selected_ticker] =
