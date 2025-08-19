@@ -388,8 +388,9 @@ class PortfolioTracker:
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
             raise ValueError(f"Target allocations must sum to 100%, got {total}%")
-        self.target_allocations = new_allocations
-        st.session_state.tracker.target_allocations = new_allocations
+        for ticker in self.current_prices.keys():
+            self.target_allocations[ticker] = new_allocations.get(ticker, 0.0)
+        st.session_state.tracker.target_allocations = self.target_allocations
         self.add_alert("Target allocations updated")
         st.session_state.update_allocations = True
 
@@ -602,16 +603,23 @@ def main():
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
             st.write("Select stocks and enter target allocation percentages (must sum to 100%)")
-            selected_tickers = st.multiselect("Select Stocks", options=sorted(tracker.current_prices.keys()), default=list(tracker.target_allocations.keys()))
+            selected_tickers = st.multiselect(
+                "Select Stocks",
+                options=sorted(tracker.current_prices.keys()),
+                default=[ticker for ticker, alloc in tracker.target_allocations.items() if alloc > 0]
+            )
             new_allocations = {}
-            for ticker in tracker.current_prices.keys():
-                new_allocations[ticker] = 0.0
             if selected_tickers:
                 cols = st.columns(min(len(selected_tickers), 5))
                 for i, ticker in enumerate(selected_tickers):
                     with cols[i % 5]:
                         new_allocations[ticker] = st.number_input(
-                            f"{ticker} (%)", min_value=0.0, max_value=100.0, value=tracker.target_allocations.get(ticker, 0.0), step=0.1
+                            f"{ticker} (%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=tracker.target_allocations.get(ticker, 0.0),
+                            step=0.1,
+                            key=f"alloc_{ticker}"
                         )
             submit = st.form_submit_button("Update Allocations")
             if submit:
@@ -627,17 +635,32 @@ def main():
             edit_ticker = st.selectbox("Select Stock to Edit or Remove", options=selected_tickers)
             if edit_ticker:
                 new_percentage = st.number_input(
-                    f"New Percentage for {edit_ticker} (%)", min_value=0.0, max_value=100.0, value=tracker.target_allocations.get(edit_ticker, 0.0), step=0.1
+                    f"New Percentage for {edit_ticker} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=tracker.target_allocations.get(edit_ticker, 0.0),
+                    step=0.1,
+                    key=f"edit_alloc_{edit_ticker}"
                 )
                 if st.button("Update Percentage"):
-                    tracker.target_allocations[edit_ticker] = new_percentage
-                    st.success(f"Percentage for {edit_ticker} updated to {new_percentage}%")
-                    st.rerun()
+                    new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                    new_allocations[edit_ticker] = new_percentage
+                    try:
+                        tracker.update_target_allocations(new_allocations)
+                        st.success(f"Percentage for {edit_ticker} updated to {new_percentage}%")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
 
                 if st.button("Remove Stock"):
-                    tracker.target_allocations[edit_ticker] = 0.0
-                    st.success(f"{edit_ticker} removed from distribution.")
-                    st.rerun()
+                    new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                    new_allocations[edit_ticker] = 0.0
+                    try:
+                        tracker.update_target_allocations(new_allocations)
+                        st.success(f"{edit_ticker} removed from distribution.")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
         else:
             st.info("No stocks selected for editing or removal.")
 
