@@ -570,35 +570,70 @@ def main():
 
     elif page == "Distribution":
         st.header("Distribution Analysis")
-        portfolio_df = tracker.get_portfolio()
-        dist_df = pd.DataFrame(columns=['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'Sharia Compliant'])
-        if not portfolio_df.empty:
-            dist_df = portfolio_df[['Stock', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'Sharia Compliant']]
-        st.dataframe(
-            dist_df,
-            column_config={
-                "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                "Allocation Delta %": st.column_config.NumberColumn(format="%.2f%"),
-                "Sharia Compliant": st.column_config.TextColumn(
-                    "Sharia Compliant",
-                    help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+        # Create distribution DataFrame from target allocations
+        dist_list = [
+            {'Stock': ticker, 'Target Allocation %': alloc}
+            for ticker, alloc in tracker.target_allocations.items() if alloc > 0
+        ]
+        dist_df = pd.DataFrame(dist_list)
+        if not dist_df.empty:
+            dist_df['Select'] = False
+            edited_df = st.data_editor(
+                dist_df,
+                column_config={
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Select": st.column_config.CheckboxColumn()
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            selected = edited_df[edited_df['Select']].index.tolist()
+            if selected:
+                selected_ticker = edited_df.loc[selected[0], 'Stock']
+                st.subheader(f"Edit or Remove {selected_ticker}")
+                new_percentage = st.number_input(
+                    f"New Percentage for {selected_ticker} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=tracker.target_allocations.get(selected_ticker, 0.0),
+                    step=0.1,
+                    key=f"edit_alloc_{selected_ticker}"
                 )
-            },
-            use_container_width=True
-        )
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Update Percentage"):
+                        new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                        new_allocations[selected_ticker] = new_percentage
+                        try:
+                            tracker.update_target_allocations(new_allocations)
+                            st.success(f"Percentage for {selected_ticker} updated to {new_percentage}%")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(f"Error: {e}")
+                with col2:
+                    if st.button("Remove Stock"):
+                        new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
+                        new_allocations[selected_ticker] = 0.0
+                        try:
+                            tracker.update_target_allocations(new_allocations)
+                            st.success(f"{selected_ticker} removed from distribution.")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(f"Error: {e}")
+            if len(selected) > 1:
+                st.warning("Please select only one stock to edit or remove.")
+        else:
+            st.info("No target allocations set. Add allocations below.")
+
         if not dist_df.empty:
             fig_dist = px.bar(
                 dist_df,
                 x='Stock',
-                y=['Current Allocation %', 'Target Allocation %'],
-                title='Current vs Target Allocation',
-                barmode='group',
-                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+                y='Target Allocation %',
+                title='Target Allocation',
+                color_discrete_map={'Target Allocation %': '#00CC96'}
             )
             st.plotly_chart(fig_dist, use_container_width=True)
-        else:
-            st.info("No holdings to analyze. Add transactions to view distribution.")
 
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
@@ -629,59 +664,6 @@ def main():
                     st.rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
-
-        st.subheader("Edit or Remove Distribution")
-        if selected_tickers:
-            edit_ticker = st.selectbox("Select Stock to Edit or Remove", options=selected_tickers)
-            if edit_ticker:
-                new_percentage = st.number_input(
-                    f"New Percentage for {edit_ticker} (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=tracker.target_allocations.get(edit_ticker, 0.0),
-                    step=0.1,
-                    key=f"edit_alloc_{edit_ticker}"
-                )
-                if st.button("Update Percentage"):
-                    new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
-                    new_allocations[edit_ticker] = new_percentage
-                    try:
-                        tracker.update_target_allocations(new_allocations)
-                        st.success(f"Percentage for {edit_ticker} updated to {new_percentage}%")
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(f"Error: {e}")
-
-                if st.button("Remove Stock"):
-                    new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
-                    new_allocations[edit_ticker] = 0.0
-                    try:
-                        tracker.update_target_allocations(new_allocations)
-                        st.success(f"{edit_ticker} removed from distribution.")
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(f"Error: {e}")
-        else:
-            st.info("No stocks selected for editing or removal.")
-
-    elif page == "Investment Plan":
-        st.header("Investment Plan")
-        plan_df = tracker.get_investment_plan()
-        if not plan_df.empty:
-            st.dataframe(
-                plan_df,
-                column_config={
-                    "Current Value": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Target Value": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Delta Value": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
-                    "Suggested Shares": st.column_config.NumberColumn(format="%.2f")
-                },
-                use_container_width=True
-            )
-            st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
-        else:
-            st.info("No investment plan available. Add transactions to generate rebalancing suggestions.")
 
         st.subheader("Add and Distribute Cash")
         with st.form("distribute_cash_form"):
@@ -735,6 +717,25 @@ def main():
                     },
                     use_container_width=True
                 )
+
+    elif page == "Investment Plan":
+        st.header("Investment Plan")
+        plan_df = tracker.get_investment_plan()
+        if not plan_df.empty:
+            st.dataframe(
+                plan_df,
+                column_config={
+                    "Current Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Target Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Delta Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Target Allocation %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Suggested Shares": st.column_config.NumberColumn(format="%.2f")
+                },
+                use_container_width=True
+            )
+            st.write("**Note**: Positive 'Delta Value' suggests buying, negative suggests selling.")
+        else:
+            st.info("No investment plan available. Add transactions to generate rebalancing suggestions.")
 
     elif page == "Cash":
         st.header("Cash Summary")
