@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 def load_psx_data():
     """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
+    # Load Sharia-compliant stocks from kmi_shares.txt
     sharia_compliant = set()
     try:
         with open("kmi_shares.txt", "r") as f:
@@ -27,6 +28,7 @@ def load_psx_data():
         st.warning(f"Error reading kmi_shares.txt: {e}. Please check the file.")
         return {}
 
+    # Load market data from market-data.json
     try:
         with open("market-data.json", "r") as f:
             market_data = json.load(f)
@@ -53,6 +55,7 @@ def load_psx_data():
                 price = item.get("price")
                 if ticker and price is not None:
                     try:
+                        # Map ticker to Sharia-compliant name if possible
                         sharia_name = next((name for name in sharia_compliant if ticker in name or name.lower().replace(" ", "") == ticker.lower()), ticker)
                         is_sharia = sharia_name in sharia_compliant
                         prices[ticker] = {
@@ -265,7 +268,7 @@ class PortfolioTracker:
             gain_loss = market_value - h['total_cost']
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
             div = self.last_div_per_share.get(ticker, 0) * shares if h['purchase_date'] <= datetime.now() else 0.0
-            roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
+            roi = gain_loss / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0  # Updated ROI to gain/loss / total invested * 100
             target_allocation = self.target_allocations.get(ticker, 0.0)
             sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
             current_allocation = (h['total_cost'] / total_invested * 100) if total_invested > 0 else 0.0
@@ -359,6 +362,22 @@ class PortfolioTracker:
         cash_to_invest = sum(d['amount'] for d in self.cash_deposits)
         return self.cash + cash_to_invest
 
+    def update_target_allocations(self, new_allocations):
+        total = sum(new_allocations.values())
+        if abs(total - 100.0) > 0.01:
+            raise ValueError(f"Target allocations must sum to 100%, got {total}%")
+        for ticker in self.current_prices.keys():
+            self.target_allocations[ticker] = new_allocations.get(ticker, 0.0)
+        st.session_state.tracker.target_allocations = self.target_allocations
+        self.add_alert("Target allocations updated")
+        st.session_state.update_allocations = True
+
+    def update_filer_status(self, status):
+        if status != self.filer_status:
+            self.filer_status = status
+            self.add_alert(f"Filer status updated to {status}")
+            st.session_state.update_filer_status = True
+
     def calculate_distribution(self, cash):
         dist_list = []
         for ticker, target in self.target_allocations.items():
@@ -402,22 +421,6 @@ class PortfolioTracker:
             if row['Units'] > 0:
                 self.add_transaction(date, row['Stock'], 'Buy', row['Units'], row['Price'], row['Fee'] + row['SST'])
         self.cash_deposits = []
-
-    def update_target_allocations(self, new_allocations):
-        total = sum(new_allocations.values())
-        if abs(total - 100.0) > 0.01:
-            raise ValueError(f"Target allocations must sum to 100%, got {total}%")
-        for ticker in self.current_prices.keys():
-            self.target_allocations[ticker] = new_allocations.get(ticker, 0.0)
-        st.session_state.tracker.target_allocations = self.target_allocations
-        self.add_alert("Target allocations updated")
-        st.session_state.update_allocations = True
-
-    def update_filer_status(self, status):
-        if status != self.filer_status:
-            self.filer_status = status
-            self.add_alert(f"Filer status updated to {status}")
-            st.session_state.update_filer_status = True
 
 def initialize_tracker(tracker):
     """Initialize tracker without default transactions."""
@@ -512,6 +515,8 @@ def main():
         st.header("Portfolio Summary")
         portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
+            portfolio_df.index = pd.RangeIndex(start=1, stop=len(portfolio_df) + 1, step=1)  # Start SNo from 1
+            portfolio_df.index.name = "SNo"
             st.dataframe(
                 portfolio_df,
                 column_config={
@@ -756,7 +761,7 @@ def main():
                 )
             else:
                 st.info("No new cash deposits recorded.")
-            st.write(f"Current Cash Balance: PKR {tracker.cash:,.2f}")
+            st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
 
         with tabs[3]:
             st.subheader("Withdraw Cash")
