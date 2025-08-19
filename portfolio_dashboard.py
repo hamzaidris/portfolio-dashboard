@@ -2,29 +2,17 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-import requests
 import json
-from retrying import retry
 import pytz
 import os
+import logging
 
-def is_working_hours():
-    """Check if current time is within PSX working hours (9 AM–5 PM PKT, UTC+5)."""
-    now_utc = datetime.now(pytz.UTC)
-    pkt_tz = pytz.timezone("Asia/Karachi")
-    now_pkt = now_utc.astimezone(pkt_tz)
-    hour = now_pkt.hour
-    return 9 <= hour < 17
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def retry_if_api_fails(exception):
-    """Retry if requests exception occurs during working hours."""
-    return is_working_hours() and isinstance(exception, requests.RequestException)
-
-@st.cache_data(ttl=43200)  # Cache for 12 hours
-@retry(stop_max_attempt_number=3 if is_working_hours() else 1, wait_fixed=2000, retry_on_exception=retry_if_api_fails)
-def fetch_psx_data():
-    """Fetch stock prices and data from PSX Terminal APIs, fallback to DPS PSX."""
-    prices = {}
+def load_psx_data():
+    """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
     fallback_prices = {
         'MLCF': {'price': 83.48, 'sharia': True, 'type': 'Stock'},
         'GCIL': {'price': 26.70, 'sharia': True, 'type': 'Stock'},
@@ -41,201 +29,92 @@ def fetch_psx_data():
         'MUF1': {'price': 150.00, 'sharia': True, 'type': 'Mutual Fund'},
         'COM1': {'price': 2500.00, 'sharia': False, 'type': 'Commodity'}
     }
+
+    # Load Sharia-compliant stocks from kmi_shares.txt
+    sharia_compliant = set()
     try:
-        response = requests.get("https://psxterminal.com/api/market-data", timeout=10)
-        response.raise_for_status()
-        try:
-            response_json = response.json()
-            if not isinstance(response_json, dict) or not response_json.get("success", False):
-                st.error("Market data API returned unexpected response. Trying DPS PSX.")
-                raise requests.RequestException("Invalid response")
-            market_data = response_json.get("data", {})
-            if isinstance(market_data, dict):
-                for market, stocks in market_data.items():
-                    if not isinstance(stocks, dict):
-                        st.warning(f"Skipping invalid market data for {market}: {stocks}")
-                        continue
-                    for ticker, item in stocks.items():
-                        if not isinstance(item, dict):
-                            st.warning(f"Skipping invalid stock data for {ticker}: {item}")
-                            continue
-                        price = item.get("price")
-                        if ticker and price is not None:
-                            try:
-                                prices[ticker] = {
-                                    "price": float(price),
-                                    "sharia": False,  # Default, updated later via /api/yields
-                                    "type": "Stock",
-                                    "change": item.get("change", 0.0),
-                                    "changePercent": item.get("changePercent", 0.0) * 100,  # Convert to percentage
-                                    "volume": item.get("volume", 0),
-                                    "trades": item.get("trades", 0),
-                                    "value": item.get("value", 0.0),
-                                    "high": item.get("high", 0.0),
-                                    "low": item.get("low", 0.0),
-                                    "bid": item.get("bid", 0.0),
-                                    "ask": item.get("ask", 0.0),
-                                    "bidVol": item.get("bidVol", 0),
-                                    "askVol": item.get("askVol", 0),
-                                    "timestamp": datetime.fromtimestamp(item.get("timestamp", 0)) if item.get("timestamp") else datetime.now(pytz.UTC)
-                                }
-                            except (ValueError, TypeError):
-                                st.warning(f"Invalid price for {ticker}: {price}")
-                                continue
-            else:
-                st.error(f"Market data 'data' field is not a dict: {type(market_data)}. Trying DPS PSX.")
-                raise requests.RequestException("Invalid data field")
-        except json.JSONDecodeError:
-            st.error(f"Failed to parse market data API response as JSON: {response.text}. Trying DPS PSX.")
-            raise requests.RequestException("JSON decode error")
-    except requests.RequestException:
-        try:
-            response = requests.get("https://dps.psx.com.pk/symbols", timeout=10)
-            response.raise_for_status()
-            try:
-                symbols_data = response.json()
-                for item in symbols_data:
-                    ticker = item.get("symbol")
-                    if ticker:
-                        prices[ticker] = {
-                            "price": 0.0,
-                            "sharia": False,  # Default, updated later or via fallback
-                            "type": "Stock",
-                            "change": 0.0,
-                            "changePercent": 0.0,
-                            "volume": 0,
-                            "trades": 0,
-                            "value": 0.0,
-                            "high": 0.0,
-                            "low": 0.0,
-                            "bid": 0.0,
-                            "ask": 0.0,
-                            "bidVol": 0,
-                            "askVol": 0,
-                            "timestamp": datetime.now(pytz.UTC)
-                        }
-            except json.JSONDecodeError:
-                st.error(f"Failed to parse DPS PSX response as JSON: {response.text}. Using fallback prices.")
-                return fallback_prices
-        except requests.RequestException as e:
-            st.error(f"Error fetching DPS PSX data: {e}. Using fallback prices.")
+        with open("kmi_shares.txt", "r") as f:
+            sharia_compliant = {line.strip() for line in f if line.strip()}
+        logger.info(f"Loaded {len(sharia_compliant)} Sharia-compliant stocks from kmi_shares.txt")
+    except FileNotFoundError:
+        logger.error("kmi_shares.txt not found. Using fallback prices.")
+        st.warning("kmi_shares.txt not found. Using fallback prices.")
+        return fallback_prices
+    except Exception as e:
+        logger.error(f"Error reading kmi_shares.txt: {e}. Using fallback prices.")
+        st.warning(f"Error reading kmi_shares.txt: {e}. Using fallback prices.")
+        return fallback_prices
+
+    # Load market data from market-data.json
+    try:
+        with open("market-data.json", "r") as f:
+            market_data = json.load(f)
+        if not isinstance(market_data, dict) or not market_data.get("success", False):
+            logger.error("Invalid market-data.json format. Using fallback prices.")
+            st.warning("Invalid market-data.json format. Using fallback prices.")
+            return fallback_prices
+        
+        market_data_content = market_data.get("data", {})
+        if not isinstance(market_data_content, dict):
+            logger.error(f"Market data 'data' field is not a dict: {type(market_data_content)}. Using fallback prices.")
+            st.warning(f"Invalid market-data.json structure. Using fallback prices.")
             return fallback_prices
 
-    if prices:
-        for ticker in prices.keys():
-            try:
-                response = requests.get(f"https://psxterminal.com/api/yields/{ticker}", timeout=10)
-                response.raise_for_status()
-                try:
-                    response_json = response.json()
-                    yields_data = response_json.get("data", {})
-                    if not isinstance(yields_data, dict):
-                        st.warning(f"Invalid yields data for {ticker}: {yields_data}")
-                        continue
-                    price = yields_data.get("price")
-                    is_non_compliant = yields_data.get("isNonCompliant", True)
-                    if price is not None:
-                        try:
-                            prices[ticker]["price"] = float(price)
-                            prices[ticker]["sharia"] = not is_non_compliant
-                        except (ValueError, TypeError):
-                            st.warning(f"Invalid price for {ticker}: {price}")
-                            continue
-                except json.JSONDecodeError:
-                    st.warning(f"Failed to parse yields API response for {ticker}: {response.text}")
-                    continue
-            except requests.RequestException as e:
-                st.warning(f"Error fetching yields data for {ticker}: {e}")
+        prices = {}
+        for market, stocks in market_data_content.items():
+            if not isinstance(stocks, dict):
+                logger.warning(f"Skipping invalid market data for {market}: {stocks}")
                 continue
+            for ticker, item in stocks.items():
+                if not isinstance(item, dict):
+                    logger.warning(f"Skipping invalid stock data for {ticker}: {item}")
+                    continue
+                price = item.get("price")
+                if ticker and price is not None:
+                    try:
+                        # Map ticker to Sharia-compliant name if possible
+                        sharia_name = next((name for name in sharia_compliant if ticker in name or name.lower().replace(" ", "") == ticker.lower()), ticker)
+                        is_sharia = sharia_name in sharia_compliant
+                        prices[ticker] = {
+                            "price": float(price),
+                            "sharia": is_sharia,
+                            "type": "Stock" if market == "REG" else "Bond" if market == "BNB" else item.get("type", "Stock"),
+                            "change": item.get("change", 0.0),
+                            "changePercent": item.get("changePercent", 0.0) * 100,
+                            "volume": item.get("volume", 0),
+                            "trades": item.get("trades", 0),
+                            "value": item.get("value", 0.0),
+                            "high": item.get("high", 0.0),
+                            "low": item.get("low", 0.0),
+                            "bid": item.get("bid", 0.0),
+                            "ask": item.get("ask", 0.0),
+                            "bidVol": item.get("bidVol", 0),
+                            "askVol": item.get("askVol", 0),
+                            "timestamp": datetime.fromtimestamp(item.get("timestamp", 0)).isoformat() if item.get("timestamp") else datetime.now(pytz.UTC).isoformat()
+                        }
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid price for {ticker}: {price}")
+                        continue
 
-    return prices or fallback_prices
+        logger.info(f"Processed {len(prices)} tickers from market-data.json")
+        if not prices:
+            st.warning("No valid data in market-data.json. Using fallback prices.")
+            return fallback_prices
+        st.info(f"Loaded {len(prices)} tickers from market-data.json")
+        return prices
 
-def save_psx_data(prices):
-    """Save PSX data to market-data.json in a consistent format."""
-    data = {
-        "timestamp": datetime.now(pytz.UTC).isoformat(),
-        "data": {
-            ticker: {**info, "timestamp": info["timestamp"].isoformat() if isinstance(info["timestamp"], datetime) else datetime.now(pytz.UTC).isoformat()}
-            for ticker, info in prices.items()
-        }
-    }
-    try:
-        with open("market-data.json", "w") as f:
-            json.dump(data, f)
-        st.info("Saved fetched PSX data to market-data.json")
+    except FileNotFoundError:
+        logger.error("market-data.json not found. Using fallback prices.")
+        st.warning("market-data.json not found. Using fallback prices.")
+        return fallback_prices
+    except json.JSONDecodeError:
+        logger.error("Failed to parse market-data.json. Using fallback prices.")
+        st.warning("Failed to parse market-data.json. Using fallback prices.")
+        return fallback_prices
     except Exception as e:
-        st.warning(f"Failed to save market-data.json: {e}")
-
-def load_psx_data():
-    """Load PSX data from market-data.json, fall back to fetch_psx_data if outdated or invalid."""
-    try:
-        if not os.path.exists("market-data.json"):
-            st.warning("market-data.json not found. Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        with open("market-data.json", "r") as f:
-            data = json.load(f)
-
-        # Validate JSON structure
-        if not isinstance(data, dict) or "data" not in data or "timestamp" not in data:
-            st.error("Invalid market-data.json structure: missing 'data' or 'timestamp'. Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        timestamp_str = data.get("timestamp", "1970-01-01T00:00:00+00:00")
-        if not isinstance(timestamp_str, str):
-            st.error(f"Invalid timestamp type in market-data.json: {type(timestamp_str)}. Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-        except (ValueError, TypeError) as e:
-            st.error(f"Invalid timestamp format in market-data.json: {timestamp_str}. Error: {e}. Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        pkt_tz = pytz.timezone("Asia/Karachi")
-        today = datetime.now(pytz.UTC).astimezone(pkt_tz).date()
-        file_date = timestamp.astimezone(pkt_tz).date()
-        if file_date != today:
-            st.warning(f"PSX data in market-data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        prices = data.get("data", {})
-        if not isinstance(prices, dict):
-            st.error(f"Invalid 'data' field in market-data.json: expected dict, got {type(prices)}. Fetching fresh data.")
-            prices = fetch_psx_data()
-            save_psx_data(prices)
-            return prices
-
-        # Convert timestamps back to datetime objects
-        for ticker, info in prices.items():
-            try:
-                if isinstance(info.get("timestamp"), str):
-                    info["timestamp"] = datetime.fromisoformat(info["timestamp"])
-                else:
-                    st.warning(f"Invalid or missing timestamp for {ticker} in market-data.json. Setting to current time.")
-                    info["timestamp"] = datetime.now(pytz.UTC)
-            except (ValueError, TypeError):
-                st.warning(f"Invalid timestamp format for {ticker} in market-data.json. Setting to current time.")
-                info["timestamp"] = datetime.now(pytz.UTC)
-
-        st.info(f"Loaded PSX data from market-data.json (timestamp: {timestamp})")
-        return prices
-
-    except (json.JSONDecodeError, ValueError, TypeError) as e:
-        st.error(f"Error loading market-data.json: {e}. Fetching fresh data.")
-        prices = fetch_psx_data()
-        save_psx_data(prices)
-        return prices
+        logger.error(f"Error processing market-data.json: {e}. Using fallback prices.")
+        st.warning(f"Error processing market-data.json: {e}. Using fallback prices.")
+        return fallback_prices
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -410,7 +289,7 @@ class PortfolioTracker:
                 'Allocation Delta %': round(current_allocation - target_allocation, 2),
                 'CGT (Potential)': round(cgt, 2)
             })
-            if abs(per_gain) > 0.1:  # 10% price change
+            if abs(per_gain) > 0.1:
                 self.add_alert(f"{ticker} has {'gained' if per_gain > 0 else 'lost'} {abs(per_gain*100):.2f}%")
         portfolio_df = pd.DataFrame(portfolio)
         return portfolio_df.sort_values(by='Market Value', ascending=False) if not portfolio_df.empty else pd.DataFrame()
@@ -480,7 +359,6 @@ class PortfolioTracker:
         return self.cash + cash_to_invest
 
     def get_investment_plan(self):
-        """Generate investment plan with rebalancing suggestions."""
         portfolio_df = self.get_portfolio()
         if portfolio_df.empty:
             return pd.DataFrame()
@@ -581,7 +459,6 @@ def main():
     st.sidebar.header("Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
 
-    # Filer Status in Sidebar
     st.sidebar.header("Tax Settings")
     filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
     if filer_status != tracker.filer_status:
@@ -904,7 +781,7 @@ def main():
         if not prices_df.empty:
             prices_df['Timestamp'] = pd.to_datetime(prices_df['Timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
             search_term = st.text_input("Search by Ticker or Name")
-            asset_type = st.selectbox("Asset Type", ["All", "Stock", "Mutual Fund", "Commodity"])
+            asset_type = st.selectbox("Asset Type", ["All", "Stock", "Mutual Fund", "Commodity", "Bond"])
             sharia_filter = st.checkbox("Show only Sharia-compliant assets", value=False)
             filtered_df = prices_df
             if search_term:
@@ -935,7 +812,7 @@ def main():
             else:
                 st.info("No assets match the search criteria.")
         else:
-            st.info("No stock data available. Try fetching latest data from 'Current Prices'.")
+            st.info("No stock data available. Ensure market-data.json and kmi_shares.txt are present.")
 
     elif page == "Notifications":
         st.header("Notifications")
@@ -980,13 +857,6 @@ def main():
 
     elif page == "Current Prices":
         st.header("Current Prices")
-        if st.button("Fetch Latest PSX Data"):
-            new_data = fetch_psx_data()
-            tracker.current_prices.update(new_data)
-            tracker.target_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in new_data.keys()}
-            tracker.last_div_per_share = {ticker: tracker.last_div_per_share.get(ticker, 0.0) for ticker in new_data.keys()}
-            save_psx_data(new_data)  # Save updated data
-            st.success("PSX data fetched and updated!")
         prices_list = [{
             'Ticker': k,
             'Price': v['price'],
@@ -1048,10 +918,9 @@ def main():
                         'askVol': row['Ask Volume'],
                         'timestamp': pd.to_datetime(row['Timestamp'])
                     }
-                save_psx_data(tracker.current_prices)  # Save updated prices
                 st.success("Prices updated successfully!")
         else:
-            st.info("No stock data available.")
+            st.info("No stock data available. Ensure market-data.json and kmi_shares.txt are present.")
 
     elif page == "Add Transaction":
         st.header("Add Transaction")
