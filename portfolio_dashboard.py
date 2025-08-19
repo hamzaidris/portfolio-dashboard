@@ -151,10 +151,10 @@ def fetch_psx_data():
     return prices or fallback_prices
 
 def load_psx_data():
-    """Load PSX data from psx_data.json, fall back to fetch_psx_data if outdated or missing."""
+    """Load PSX data from market-data.json, fall back to fetch_psx_data if outdated or missing."""
     try:
-        if os.path.exists("psx_data.json"):
-            with open("psx_data.json", "r") as f:
+        if os.path.exists("market-data.json"):
+            with open("market-data.json", "r") as f:
                 data = json.load(f)
             timestamp = datetime.fromisoformat(data.get("timestamp", "1970-01-01T00:00:00+00:00"))
             pkt_tz = pytz.timezone("Asia/Karachi")
@@ -165,14 +165,14 @@ def load_psx_data():
                 # Convert timestamps back to datetime objects
                 for ticker, info in prices.items():
                     info["timestamp"] = datetime.fromisoformat(info["timestamp"])
-                st.info(f"Loaded PSX data from psx_data.json (timestamp: {timestamp})")
+                st.info(f"Loaded PSX data from market-data.json (timestamp: {timestamp})")
                 return prices
             else:
-                st.warning(f"PSX data in psx_data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
+                st.warning(f"PSX data in market-data.json is outdated (timestamp: {timestamp}). Fetching fresh data.")
         else:
-            st.warning("psx_data.json not found. Fetching fresh data.")
+            st.warning("market-data.json not found. Fetching fresh data.")
     except (json.JSONDecodeError, ValueError) as e:
-        st.error(f"Error loading psx_data.json: {e}. Fetching fresh data.")
+        st.error(f"Error loading market-data.json: {e}. Fetching fresh data.")
     
     # Fallback to fetching fresh data
     prices = fetch_psx_data()
@@ -1031,4 +1031,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
