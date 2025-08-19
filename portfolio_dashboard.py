@@ -13,23 +13,6 @@ logger = logging.getLogger(__name__)
 
 def load_psx_data():
     """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
-    fallback_prices = {
-        'MLCF': {'price': 83.48, 'sharia': True, 'type': 'Stock'},
-        'GCIL': {'price': 26.70, 'sharia': True, 'type': 'Stock'},
-        'MEBL': {'price': 374.98, 'sharia': True, 'type': 'Stock'},
-        'OGDC': {'price': 272.69, 'sharia': True, 'type': 'Stock'},
-        'GAL': {'price': 529.99, 'sharia': True, 'type': 'Stock'},
-        'GHNI': {'price': 788.00, 'sharia': True, 'type': 'Stock'},
-        'HALEON': {'price': 829.00, 'sharia': True, 'type': 'Stock'},
-        'MARI': {'price': 629.60, 'sharia': True, 'type': 'Stock'},
-        'GLAXO': {'price': 429.99, 'sharia': True, 'type': 'Stock'},
-        'FECTC': {'price': 88.15, 'sharia': True, 'type': 'Stock'},
-        'FFC': {'price': 454.10, 'sharia': False, 'type': 'Stock'},
-        'MUGHAL': {'price': 64.01, 'sharia': False, 'type': 'Stock'},
-        'MUF1': {'price': 150.00, 'sharia': True, 'type': 'Mutual Fund'},
-        'COM1': {'price': 2500.00, 'sharia': False, 'type': 'Commodity'}
-    }
-
     # Load Sharia-compliant stocks from kmi_shares.txt
     sharia_compliant = set()
     try:
@@ -37,28 +20,28 @@ def load_psx_data():
             sharia_compliant = {line.strip() for line in f if line.strip()}
         logger.info(f"Loaded {len(sharia_compliant)} Sharia-compliant stocks from kmi_shares.txt")
     except FileNotFoundError:
-        logger.error("kmi_shares.txt not found. Using fallback prices.")
-        st.warning("kmi_shares.txt not found. Using fallback prices.")
-        return fallback_prices
+        logger.error("kmi_shares.txt not found. Returning empty data.")
+        st.warning("kmi_shares.txt not found. Please ensure the file is present.")
+        return {}
     except Exception as e:
-        logger.error(f"Error reading kmi_shares.txt: {e}. Using fallback prices.")
-        st.warning(f"Error reading kmi_shares.txt: {e}. Using fallback prices.")
-        return fallback_prices
+        logger.error(f"Error reading kmi_shares.txt: {e}. Returning empty data.")
+        st.warning(f"Error reading kmi_shares.txt: {e}. Please check the file.")
+        return {}
 
     # Load market data from market-data.json
     try:
         with open("market-data.json", "r") as f:
             market_data = json.load(f)
         if not isinstance(market_data, dict) or not market_data.get("success", False):
-            logger.error("Invalid market-data.json format. Using fallback prices.")
-            st.warning("Invalid market-data.json format. Using fallback prices.")
-            return fallback_prices
+            logger.error("Invalid market-data.json format. Returning empty data.")
+            st.warning("Invalid market-data.json format. Please check the file.")
+            return {}
         
         market_data_content = market_data.get("data", {})
         if not isinstance(market_data_content, dict):
-            logger.error(f"Market data 'data' field is not a dict: {type(market_data_content)}. Using fallback prices.")
-            st.warning(f"Invalid market-data.json structure. Using fallback prices.")
-            return fallback_prices
+            logger.error(f"Market data 'data' field is not a dict: {type(market_data_content)}. Returning empty data.")
+            st.warning("Invalid market-data.json structure. Please check the file.")
+            return {}
 
         prices = {}
         for market, stocks in market_data_content.items():
@@ -98,23 +81,23 @@ def load_psx_data():
 
         logger.info(f"Processed {len(prices)} tickers from market-data.json")
         if not prices:
-            st.warning("No valid data in market-data.json. Using fallback prices.")
-            return fallback_prices
+            st.warning("No valid data in market-data.json. Please check the file.")
+            return {}
         st.info(f"Loaded {len(prices)} tickers from market-data.json")
         return prices
 
     except FileNotFoundError:
-        logger.error("market-data.json not found. Using fallback prices.")
-        st.warning("market-data.json not found. Using fallback prices.")
-        return fallback_prices
+        logger.error("market-data.json not found. Returning empty data.")
+        st.warning("market-data.json not found. Please ensure the file is present.")
+        return {}
     except json.JSONDecodeError:
-        logger.error("Failed to parse market-data.json. Using fallback prices.")
-        st.warning("Failed to parse market-data.json. Using fallback prices.")
-        return fallback_prices
+        logger.error("Failed to parse market-data.json. Returning empty data.")
+        st.warning("Failed to parse market-data.json. Please check the file.")
+        return {}
     except Exception as e:
-        logger.error(f"Error processing market-data.json: {e}. Using fallback prices.")
-        st.warning(f"Error processing market-data.json: {e}. Using fallback prices.")
-        return fallback_prices
+        logger.error(f"Error processing market-data.json: {e}. Returning empty data.")
+        st.warning(f"Error processing market-data.json: {e}. Please check the file.")
+        return {}
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
@@ -138,6 +121,12 @@ class PortfolioTracker:
         self.cash_deposits = []
         self.alerts = []  # Store notifications
         self.filer_status = 'Filer'  # Default tax status
+        self.broker_fees = {
+            'low_price_fee': 0.03,  # Fee per unit for P <= 20
+            'sst_low_price': 0.0045,  # SST for P <= 20
+            'brokerage_rate': 0.0015,  # Brokerage rate for P > 20
+            'sst_rate': 0.15  # SST rate for brokerage
+        }
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         if isinstance(date, int):
@@ -191,6 +180,15 @@ class PortfolioTracker:
             trans['price'] = 0.0
             trans['fee'] = 0.0
             self.add_alert(f"Deposited PKR {quantity} on {date.strftime('%Y-%m-%d')}")
+        elif trans_type == 'Withdraw':
+            if quantity > self.cash:
+                raise ValueError(f"Insufficient cash balance (PKR {self.cash:.2f}) for withdrawal of PKR {quantity:.2f}.")
+            self.cash -= quantity
+            trans['total'] = -quantity
+            trans['realized'] = 0.0
+            trans['price'] = 0.0
+            trans['fee'] = 0.0
+            self.add_alert(f"Withdrew PKR {quantity} on {date.strftime('%Y-%m-%d')}")
         else:
             raise ValueError("Unsupported transaction type.")
         self.transactions.append(trans)
@@ -246,6 +244,9 @@ class PortfolioTracker:
             self.initial_cash -= trans['total']
             self.cash_deposits = [d for d in self.cash_deposits if d['amount'] != trans['total'] or d['date'] != trans['date']]
             self.add_alert(f"Deleted Deposit of PKR {trans['total']} on {trans['date'].strftime('%Y-%m-%d')}")
+        elif trans['type'] == 'Withdraw':
+            self.cash += trans['total']
+            self.add_alert(f"Deleted Withdrawal of PKR {-trans['total']} on {trans['date'].strftime('%Y-%m-%d')}")
         elif trans['type'] == 'Dividend':
             self.cash -= trans['total']
             self.dividends[trans['ticker']] -= trans['total']
@@ -313,7 +314,10 @@ class PortfolioTracker:
         }
 
     def get_cash_summary(self):
-        cash_flows = [t for t in self.transactions if t['type'] in ['Deposit', 'Dividend', 'Buy', 'Sell']]
+        cash_flows = [
+            {'date': t['date'], 'type': t['type'], 'quantity': t['total']}
+            for t in self.transactions if t['type'] in ['Deposit', 'Withdraw', 'Dividend', 'Buy', 'Sell']
+        ]
         return pd.DataFrame(cash_flows) if cash_flows else pd.DataFrame()
 
     def get_invested_timeline(self):
@@ -405,20 +409,20 @@ class PortfolioTracker:
             if P == 0.0:
                 continue
             if P <= 20:
-                fee_per = 0.03
-                sst_per = 0.0045
+                fee_per = self.broker_fees['low_price_fee']
+                sst_per = self.broker_fees['sst_low_price']
                 total_per = P + fee_per + sst_per
                 U = int(dist / total_per)
                 fee = U * fee_per
                 sst = U * sst_per
             else:
-                brokerage_rate = 0.0015
-                sst_rate = brokerage_rate * 0.15
-                total_rate = brokerage_rate + sst_rate
+                brokerage_rate = self.broker_fees['brokerage_rate']
+                sst_rate = self.broker_fees['sst_rate']
+                total_rate = brokerage_rate + (brokerage_rate * sst_rate)
                 investable = dist / (1 + total_rate)
                 U = int(investable / P)
                 fee = U * P * brokerage_rate
-                sst = fee * 0.15
+                sst = fee * sst_rate
             net_invested = U * P + fee + sst
             leftover = dist - net_invested
             dist_list.append({
@@ -457,7 +461,7 @@ def main():
     tracker = st.session_state.tracker
 
     st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Investment Plan", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees"])
 
     st.sidebar.header("Tax Settings")
     filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
@@ -598,7 +602,7 @@ def main():
         st.subheader("Edit Target Allocations")
         with st.form("edit_allocations_form"):
             st.write("Select stocks and enter target allocation percentages (must sum to 100%)")
-            selected_tickers = st.multiselect("Select Stocks", options=sorted(tracker.current_prices.keys()), default=[])
+            selected_tickers = st.multiselect("Select Stocks", options=sorted(tracker.current_prices.keys()), default=list(tracker.target_allocations.keys()))
             new_allocations = {}
             for ticker in tracker.current_prices.keys():
                 new_allocations[ticker] = 0.0
@@ -617,6 +621,25 @@ def main():
                     st.rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
+
+        st.subheader("Edit or Remove Distribution")
+        if selected_tickers:
+            edit_ticker = st.selectbox("Select Stock to Edit or Remove", options=selected_tickers)
+            if edit_ticker:
+                new_percentage = st.number_input(
+                    f"New Percentage for {edit_ticker} (%)", min_value=0.0, max_value=100.0, value=tracker.target_allocations.get(edit_ticker, 0.0), step=0.1
+                )
+                if st.button("Update Percentage"):
+                    tracker.target_allocations[edit_ticker] = new_percentage
+                    st.success(f"Percentage for {edit_ticker} updated to {new_percentage}%")
+                    st.rerun()
+
+                if st.button("Remove Stock"):
+                    tracker.target_allocations[edit_ticker] = 0.0
+                    st.success(f"{edit_ticker} removed from distribution.")
+                    st.rerun()
+        else:
+            st.info("No stocks selected for editing or removal.")
 
     elif page == "Investment Plan":
         st.header("Investment Plan")
@@ -674,11 +697,6 @@ def main():
                             },
                             use_container_width=True
                         )
-                        if st.button("Confirm and Execute Distribution"):
-                            tracker.add_transaction(date, None, 'Deposit', cash, 0.0)
-                            tracker.execute_distribution(dist_df, date)
-                            st.success("Cash added and distributed successfully!")
-                            st.rerun()
             else:
                 dist_df = tracker.calculate_distribution(cash)
                 st.session_state.dist_df = dist_df
@@ -694,15 +712,10 @@ def main():
                     },
                     use_container_width=True
                 )
-                if st.button("Confirm and Execute Distribution"):
-                    tracker.add_transaction(date, None, 'Deposit', cash, 0.0)
-                    tracker.execute_distribution(dist_df, date)
-                    st.success("Cash added and distributed successfully!")
-                    st.rerun()
 
     elif page == "Cash":
         st.header("Cash Summary")
-        tabs = st.tabs(["Cash Flow", "Add Cash", "Cash to be Invested"])
+        tabs = st.tabs(["Cash Flow", "Add Cash", "Cash Available", "Withdraw Cash"])
 
         with tabs[0]:
             cash_df = tracker.get_cash_summary()
@@ -711,10 +724,7 @@ def main():
                 st.dataframe(
                     cash_df,
                     column_config={
-                        "total": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "realized": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "price": st.column_config.NumberColumn(format="PKR %.2f"),
-                        "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                        "quantity": st.column_config.NumberColumn(format="PKR %.2f")
                     },
                     use_container_width=True
                 )
@@ -739,7 +749,7 @@ def main():
 
         with tabs[2]:
             cash_to_invest = tracker.get_cash_to_invest()
-            st.metric("Cash to be Invested", f"PKR {cash_to_invest:,.2f}")
+            st.metric("Cash Available", f"PKR {cash_to_invest:,.2f}")
             deposits_df = pd.DataFrame(tracker.cash_deposits)
             if not deposits_df.empty:
                 deposits_df['date'] = pd.to_datetime(deposits_df['date']).dt.strftime('%Y-%m-%d')
@@ -753,6 +763,20 @@ def main():
             else:
                 st.info("No new cash deposits recorded.")
             st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
+
+        with tabs[3]:
+            st.subheader("Withdraw Cash")
+            with st.form("withdraw_cash_form"):
+                date = st.date_input("Withdrawal Date", value=datetime.now())
+                amount = st.number_input("Withdrawal Amount (PKR)", min_value=0.0, step=100.0)
+                submit = st.form_submit_button("Withdraw Cash")
+                if submit:
+                    try:
+                        tracker.add_transaction(date, None, 'Withdraw', amount, 0.0)
+                        st.success("Cash withdrawn successfully!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
 
     elif page == "Stock Explorer":
         st.header("Stock Explorer")
@@ -899,9 +923,10 @@ def main():
                 key="prices_editor"
             )
             if st.button("Update Prices"):
+                updated_prices = {}
                 for _, row in edited_df.iterrows():
                     ticker = row['Ticker']
-                    tracker.current_prices[ticker] = {
+                    updated_prices[ticker] = {
                         'price': row['Price'],
                         'sharia': row['Sharia Compliant'] == '✅',
                         'type': row['Type'],
@@ -918,6 +943,7 @@ def main():
                         'askVol': row['Ask Volume'],
                         'timestamp': pd.to_datetime(row['Timestamp'])
                     }
+                tracker.current_prices = updated_prices
                 st.success("Prices updated successfully!")
         else:
             st.info("No stock data available. Ensure market-data.json and kmi_shares.txt are present.")
@@ -930,15 +956,15 @@ def main():
                 date = st.date_input("Date", value=datetime.now())
                 ticker_options = sorted(tracker.current_prices.keys())
                 ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
-                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit"])
+                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit", "Withdraw"])
             with col2:
                 quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
-                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'])
+                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'] if ticker else 0.0)
                 fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
             submit = st.form_submit_button("Add Transaction")
             if submit:
                 try:
-                    tracker.add_transaction(date, ticker if trans_type != "Deposit" else None, trans_type, quantity, price, fee)
+                    tracker.add_transaction(date, ticker if trans_type in ["Buy", "Sell"] else None, trans_type, quantity, price, fee)
                     st.success("Transaction added successfully!")
                     st.rerun()
                 except ValueError as e:
@@ -958,6 +984,24 @@ def main():
                     st.rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
+
+    elif page == "Broker Fees":
+        st.header("Broker Fees")
+        st.write("Define your broker fees for distribution calculations.")
+        with st.form("broker_fees_form"):
+            low_price_fee = st.number_input("Low Price Fee (P <= 20)", min_value=0.0, value=tracker.broker_fees.get('low_price_fee', 0.03), step=0.01)
+            sst_low_price = st.number_input("SST for Low Price (P <= 20)", min_value=0.0, value=tracker.broker_fees.get('sst_low_price', 0.0045), step=0.0001)
+            brokerage_rate = st.number_input("Brokerage Rate (P > 20)", min_value=0.0, value=tracker.broker_fees.get('brokerage_rate', 0.0015), step=0.0001)
+            sst_rate = st.number_input("SST Rate for Brokerage", min_value=0.0, value=tracker.broker_fees.get('sst_rate', 0.15), step=0.01)
+            submit = st.form_submit_button("Update Broker Fees")
+            if submit:
+                tracker.broker_fees = {
+                    'low_price_fee': low_price_fee,
+                    'sst_low_price': sst_low_price,
+                    'brokerage_rate': brokerage_rate,
+                    'sst_rate': sst_rate
+                }
+                st.success("Broker fees updated successfully!")
 
 if __name__ == '__main__':
     main()
