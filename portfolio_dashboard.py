@@ -11,9 +11,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@st.cache_data
 def load_psx_data():
-    """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt with caching."""
+    """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
+    # Load Sharia-compliant stocks from kmi_shares.txt
     sharia_compliant = set()
     try:
         with open("kmi_shares.txt", "r") as f:
@@ -28,6 +28,7 @@ def load_psx_data():
         st.warning(f"Error reading kmi_shares.txt: {e}. Please check the file.")
         return {}
 
+    # Load market data from market-data.json
     try:
         with open("market-data.json", "r") as f:
             market_data = json.load(f)
@@ -54,6 +55,7 @@ def load_psx_data():
                 price = item.get("price")
                 if ticker and price is not None:
                     try:
+                        # Map ticker to Sharia-compliant name if possible
                         sharia_name = next((name for name in sharia_compliant if ticker in name or name.lower().replace(" ", "") == ticker.lower()), ticker)
                         is_sharia = sharia_name in sharia_compliant
                         prices[ticker] = {
@@ -266,7 +268,7 @@ class PortfolioTracker:
             gain_loss = market_value - h['total_cost']
             per_gain = gain_loss / h['total_cost'] if h['total_cost'] > 0 else 0.0
             div = self.last_div_per_share.get(ticker, 0) * shares if h['purchase_date'] <= datetime.now() else 0.0
-            roi = gain_loss / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
+            roi = (market_value + div) / h['total_cost'] * 100 if h['total_cost'] > 0 else 0.0
             target_allocation = self.target_allocations.get(ticker, 0.0)
             sharia = self.current_prices.get(ticker, {'sharia': False})['sharia']
             current_allocation = (h['total_cost'] / total_invested * 100) if total_invested > 0 else 0.0
@@ -360,6 +362,28 @@ class PortfolioTracker:
         cash_to_invest = sum(d['amount'] for d in self.cash_deposits)
         return self.cash + cash_to_invest
 
+    def get_investment_plan(self):
+        portfolio_df = self.get_portfolio()
+        if portfolio_df.empty:
+            return pd.DataFrame()
+        total_value = portfolio_df['Market Value'].sum() + self.cash
+        plan = []
+        for ticker, target in self.target_allocations.items():
+            current_value = portfolio_df[portfolio_df['Stock'] == ticker]['Market Value'].sum()
+            target_value = total_value * (target / 100)
+            delta_value = target_value - current_value
+            current_price = self.current_prices.get(ticker, {'price': 0.0})['price']
+            suggested_shares = delta_value / current_price if current_price > 0 else 0
+            plan.append({
+                'Stock': ticker,
+                'Target Allocation %': target,
+                'Current Value': round(current_value, 2),
+                'Target Value': round(target_value, 2),
+                'Delta Value': round(delta_value, 2),
+                'Suggested Shares': round(suggested_shares, 2)
+            })
+        return pd.DataFrame(plan).sort_values(by='Delta Value', ascending=False) if plan else pd.DataFrame()
+
     def update_target_allocations(self, new_allocations):
         total = sum(new_allocations.values())
         if abs(total - 100.0) > 0.01:
@@ -434,7 +458,6 @@ def main():
         initialize_tracker(st.session_state.tracker)
         st.session_state.update_allocations = False
         st.session_state.update_filer_status = False
-        st.session_state.data_changed = False  # Flag to track data changes
 
     tracker = st.session_state.tracker
 
@@ -446,19 +469,14 @@ def main():
     if filer_status != tracker.filer_status:
         tracker.update_filer_status(filer_status)
 
-    if st.session_state.get('update_filer_status', False) or st.session_state.get('update_allocations', False) or st.session_state.get('data_changed', False):
+    if st.session_state.get('update_filer_status', False) or st.session_state.get('update_allocations', False):
         st.session_state.update_filer_status = False
         st.session_state.update_allocations = False
-        st.session_state.data_changed = False
         st.rerun()
 
     if page == "Dashboard":
         st.header("Dashboard")
-        if 'dashboard_data' not in st.session_state or st.session_state.data_changed:
-            dashboard = tracker.get_dashboard()
-            st.session_state.dashboard_data = dashboard
-        else:
-            dashboard = st.session_state.dashboard_data
+        dashboard = tracker.get_dashboard()
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Portfolio Value", f"PKR {dashboard['Total Portfolio Value']:,.2f}")
         col2.metric("Total ROI %", f"{dashboard['Total ROI %']:.2f}%")
@@ -469,37 +487,47 @@ def main():
         col3.metric("Total Unrealized Gain", f"PKR {dashboard['Total Unrealized Gain']:,.2f}")
         col4.metric("% of Target Invested", f"{dashboard['% of Target Invested']:.2f}%")
 
-        portfolio_df = tracker.get_portfolio() if 'portfolio_df' not in st.session_state or st.session_state.data_changed else st.session_state.portfolio_df
+        portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
-            if st.session_state.data_changed or 'dashboard_charts' not in st.session_state:
-                fig_bar = px.bar(
-                    portfolio_df,
-                    x='Stock',
-                    y=['Market Value', 'Gain/Loss'],
-                    title='Portfolio Value and Gains/Losses by Asset',
-                    barmode='group',
-                    color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
+            fig_bar = px.bar(
+                portfolio_df,
+                x='Stock',
+                y=['Market Value', 'Gain/Loss'],
+                title='Portfolio Value and Gains/Losses by Asset',
+                barmode='group',
+                color_discrete_map={'Market Value': '#636EFA', 'Gain/Loss': '#EF553B'}
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            fig_alloc = px.bar(
+                portfolio_df,
+                x='Stock',
+                y=['Current Allocation %', 'Target Allocation %'],
+                title='Current vs Target Allocation',
+                barmode='group',
+                color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+            )
+            st.plotly_chart(fig_alloc, use_container_width=True)
+
+            invested_df = tracker.get_invested_timeline()
+            if not invested_df.empty:
+                fig_invested = px.line(
+                    invested_df,
+                    x='date',
+                    y='invested',
+                    title='Amount Invested Over Time'
                 )
-                fig_alloc = px.bar(
-                    portfolio_df,
-                    x='Stock',
-                    y=['Current Allocation %', 'Target Allocation %'],
-                    title='Current vs Target Allocation',
-                    barmode='group',
-                    color_discrete_map={'Current Allocation %': '#636EFA', 'Target Allocation %': '#00CC96'}
+                st.plotly_chart(fig_invested, use_container_width=True)
+
+            pl_df = tracker.get_profit_loss_timeline()
+            if not pl_df.empty:
+                fig_pl = px.line(
+                    pl_df,
+                    x='date',
+                    y='profit_loss',
+                    title='Profit/Loss Over Time (Approximate)'
                 )
-                invested_df = tracker.get_invested_timeline()
-                fig_invested = px.line(invested_df, x='date', y='invested', title='Amount Invested Over Time') if not invested_df.empty else None
-                pl_df = tracker.get_profit_loss_timeline()
-                fig_pl = px.line(pl_df, x='date', y='profit_loss', title='Profit/Loss Over Time (Approximate)') if not pl_df.empty else None
-                st.session_state.dashboard_charts = {'bar': fig_bar, 'alloc': fig_alloc, 'invested': fig_invested, 'pl': fig_pl}
-                st.session_state.portfolio_df = portfolio_df
-            st.plotly_chart(st.session_state.dashboard_charts['bar'], use_container_width=True)
-            st.plotly_chart(st.session_state.dashboard_charts['alloc'], use_container_width=True)
-            if st.session_state.dashboard_charts['invested']:
-                st.plotly_chart(st.session_state.dashboard_charts['invested'], use_container_width=True)
-            if st.session_state.dashboard_charts['pl']:
-                st.plotly_chart(st.session_state.dashboard_charts['pl'], use_container_width=True)
+                st.plotly_chart(fig_pl, use_container_width=True)
             else:
                 st.info("Historical profit/loss data not available.")
         else:
@@ -507,14 +535,8 @@ def main():
 
     elif page == "Portfolio":
         st.header("Portfolio Summary")
-        if 'portfolio_df' not in st.session_state or st.session_state.data_changed:
-            portfolio_df = tracker.get_portfolio()
-            st.session_state.portfolio_df = portfolio_df
-        else:
-            portfolio_df = st.session_state.portfolio_df
+        portfolio_df = tracker.get_portfolio()
         if not portfolio_df.empty:
-            portfolio_df.index = pd.RangeIndex(start=1, stop=len(portfolio_df) + 1, step=1)
-            portfolio_df.index.name = "SNo"
             st.dataframe(
                 portfolio_df,
                 column_config={
@@ -535,30 +557,25 @@ def main():
                 },
                 use_container_width=True
             )
-            if st.session_state.data_changed or 'portfolio_pie' not in st.session_state:
-                fig_pie = px.pie(
-                    portfolio_df,
-                    values='Total Invested',
-                    names='Stock',
-                    title='Portfolio Allocation (Based on Invested Amount)',
-                    color_discrete_sequence=px.colors.qualitative.Plotly
-                )
-                st.session_state.portfolio_pie = fig_pie
-            st.plotly_chart(st.session_state.portfolio_pie, use_container_width=True)
+            fig_pie = px.pie(
+                portfolio_df,
+                values='Total Invested',
+                names='Stock',
+                title='Portfolio Allocation (Based on Invested Amount)',
+                color_discrete_sequence=px.colors.qualitative.Plotly
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("No holdings in portfolio. Add transactions via 'Add Transaction'.")
 
     elif page == "Distribution":
         st.header("Distribution Analysis")
-        if 'dist_df' not in st.session_state or st.session_state.data_changed:
-            dist_list = [
-                {'Stock': ticker, 'Target Allocation %': alloc}
-                for ticker, alloc in tracker.target_allocations.items() if alloc > 0
-            ]
-            dist_df = pd.DataFrame(dist_list)
-            st.session_state.dist_df = dist_df
-        else:
-            dist_df = st.session_state.dist_df
+        # Create distribution DataFrame from target allocations
+        dist_list = [
+            {'Stock': ticker, 'Target Allocation %': alloc}
+            for ticker, alloc in tracker.target_allocations.items() if alloc > 0
+        ]
+        dist_df = pd.DataFrame(dist_list)
         if not dist_df.empty:
             dist_df['Select'] = False
             edited_df = st.data_editor(
@@ -590,7 +607,6 @@ def main():
                         try:
                             tracker.update_target_allocations(new_allocations)
                             st.success(f"Percentage for {selected_ticker} updated to {new_percentage}%")
-                            st.session_state.data_changed = True
                             st.rerun()
                         except ValueError as e:
                             st.error(f"Error: {e}")
@@ -600,83 +616,361 @@ def main():
                         new_allocations[selected_ticker] = 0.0
                         try:
                             tracker.update_target_allocations(new_allocations)
-                            st.success(f"Removed {selected_ticker} from target allocations")
-                            st.session_state.data_changed = True
+                            st.success(f"{selected_ticker} removed from distribution.")
                             st.rerun()
                         except ValueError as e:
                             st.error(f"Error: {e}")
+            if len(selected) > 1:
+                st.warning("Please select only one stock to edit or remove.")
+        else:
+            st.info("No target allocations set. Add allocations below.")
+
+        if not dist_df.empty:
+            fig_dist = px.bar(
+                dist_df,
+                x='Stock',
+                y='Target Allocation %',
+                title='Target Allocation',
+                color_discrete_map={'Target Allocation %': '#00CC96'}
+            )
+            st.plotly_chart(fig_dist, use_container_width=True)
+
+        st.subheader("Edit Target Allocations")
+        with st.form("edit_allocations_form"):
+            st.write("Select stocks and enter target allocation percentages (must sum to 100%)")
+            selected_tickers = st.multiselect(
+                "Select Stocks",
+                options=sorted(tracker.current_prices.keys()),
+                default=[ticker for ticker, alloc in tracker.target_allocations.items() if alloc > 0]
+            )
+            new_allocations = {}
+            if selected_tickers:
+                cols = st.columns(min(len(selected_tickers), 5))
+                for i, ticker in enumerate(selected_tickers):
+                    with cols[i % 5]:
+                        new_allocations[ticker] = st.number_input(
+                            f"{ticker} (%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=tracker.target_allocations.get(ticker, 0.0),
+                            step=0.1,
+                            key=f"alloc_{ticker}"
+                        )
+            submit = st.form_submit_button("Update Allocations")
+            if submit:
+                try:
+                    tracker.update_target_allocations(new_allocations)
+                    st.success("Target allocations updated successfully!")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(f"Error: {e}")
+
+        st.subheader("Sample Distribution")
+        with st.form("distribute_cash_form"):
+            date = st.date_input("Date", value=datetime.now())
+            cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
+            sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
+            submit_calc = st.form_submit_button("Calculate Sample Distribution")
+        if submit_calc:
+            if sharia_only:
+                sharia_allocations = {
+                    ticker: alloc for ticker, alloc in tracker.target_allocations.items()
+                    if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
+                }
+                if not sharia_allocations:
+                    st.error("No Sharia-compliant stocks with positive allocations.")
+                else:
+                    total_alloc = sum(sharia_allocations.values())
+                    if total_alloc == 0:
+                        st.error("Total allocation for Sharia-compliant stocks is 0.")
+                    else:
+                        normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                        temp_tracker = PortfolioTracker()
+                        temp_tracker.target_allocations = normalized_allocations
+                        temp_tracker.current_prices = tracker.current_prices
+                        dist_df = temp_tracker.calculate_distribution(cash)
+                        st.session_state.dist_df = dist_df
+                        st.dataframe(
+                            dist_df,
+                            column_config={
+                                "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                                "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                            },
+                            use_container_width=True
+                        )
+            else:
+                dist_df = tracker.calculate_distribution(cash)
+                st.session_state.dist_df = dist_df
+                st.dataframe(
+                    dist_df,
+                    column_config={
+                        "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
 
     elif page == "Cash":
         st.header("Cash Summary")
-        cash_df = tracker.get_cash_summary()
-        if not cash_df.empty:
-            st.dataframe(cash_df)
-        else:
-            st.info("No cash transactions recorded.")
+        tabs = st.tabs(["Cash Flow", "Add Cash", "Cash Available", "Withdraw Cash"])
+
+        with tabs[0]:
+            cash_df = tracker.get_cash_summary()
+            if not cash_df.empty:
+                cash_df['date'] = pd.to_datetime(cash_df['date']).dt.strftime('%Y-%m-%d')
+                st.dataframe(
+                    cash_df,
+                    column_config={
+                        "quantity": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No cash transactions recorded. Add a deposit to start.")
+            st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
+            dashboard = tracker.get_dashboard()
+            st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
+
+        with tabs[1]:
+            with st.form("add_cash_form"):
+                date = st.date_input("Deposit Date", value=datetime.now())
+                amount = st.number_input("Deposit Amount (PKR)", min_value=0.0, step=100.0)
+                submit = st.form_submit_button("Add Cash")
+                if submit:
+                    try:
+                        tracker.add_transaction(date, None, 'Deposit', amount, 0.0)
+                        st.success("Cash deposited successfully!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
+
+        with tabs[2]:
+            cash_to_invest = tracker.get_cash_to_invest()
+            st.metric("Cash Available", f"PKR {cash_to_invest:,.2f}")
+            deposits_df = pd.DataFrame(tracker.cash_deposits)
+            if not deposits_df.empty:
+                deposits_df['date'] = pd.to_datetime(deposits_df['date']).dt.strftime('%Y-%m-%d')
+                st.dataframe(
+                    deposits_df,
+                    column_config={
+                        "amount": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No new cash deposits recorded.")
+            st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
+
+        with tabs[3]:
+            st.subheader("Withdraw Cash")
+            with st.form("withdraw_cash_form"):
+                date = st.date_input("Withdrawal Date", value=datetime.now())
+                amount = st.number_input("Withdrawal Amount (PKR)", min_value=0.0, step=100.0)
+                submit = st.form_submit_button("Withdraw Cash")
+                if submit:
+                    try:
+                        tracker.add_transaction(date, None, 'Withdraw', amount, 0.0)
+                        st.success("Cash withdrawn successfully!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
 
     elif page == "Stock Explorer":
         st.header("Stock Explorer")
-        if tracker.current_prices:
-            stock_list = list(tracker.current_prices.keys())
-            selected_stock = st.selectbox("Select a Stock", stock_list)
-            if selected_stock:
-                stock_data = tracker.current_prices[selected_stock]
-                st.write(f"**{selected_stock} Details:**")
-                st.write(f"Price: PKR {stock_data['price']:.2f}")
-                st.write(f"Change: {stock_data['change']:.2f} ({stock_data['changePercent']:.2f}%)")
-                st.write(f"Sharia Compliant: {'Yes' if stock_data['sharia'] else 'No'}")
+        st.write("Search and explore investment opportunities across stocks, mutual funds, and commodities.")
+        prices_df = pd.DataFrame([
+            {
+                'Ticker': k,
+                'Price': v['price'],
+                'Sharia Compliant': '✅' if v['sharia'] else '❌',
+                'Type': v.get('type', 'Stock'),
+                'Change': v.get('change', 0.0),
+                'Change %': v.get('changePercent', 0.0),
+                'Volume': v.get('volume', 0),
+                'Trades': v.get('trades', 0),
+                'Value': v.get('value', 0.0),
+                'High': v.get('high', 0.0),
+                'Low': v.get('low', 0.0),
+                'Bid': v.get('bid', 0.0),
+                'Ask': v.get('ask', 0.0),
+                'Bid Volume': v.get('bidVol', 0),
+                'Ask Volume': v.get('askVol', 0),
+                'Timestamp': v.get('timestamp', datetime.now())
+            }
+            for k, v in tracker.current_prices.items()
+        ])
+        if not prices_df.empty:
+            prices_df['Timestamp'] = pd.to_datetime(prices_df['Timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            search_term = st.text_input("Search by Ticker or Name")
+            asset_type = st.selectbox("Asset Type", ["All", "Stock", "Mutual Fund", "Commodity", "Bond"])
+            sharia_filter = st.checkbox("Show only Sharia-compliant assets", value=False)
+            filtered_df = prices_df
+            if search_term:
+                filtered_df = filtered_df[filtered_df['Ticker'].str.contains(search_term, case=False, na=False)]
+            if asset_type != "All":
+                filtered_df = filtered_df[filtered_df['Type'] == asset_type]
+            if sharia_filter:
+                filtered_df = filtered_df[filtered_df['Sharia Compliant'] == '✅']
+            if not filtered_df.empty:
+                st.dataframe(
+                    filtered_df,
+                    column_config={
+                        "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Change": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Change %": st.column_config.NumberColumn(format="%.2f%"),
+                        "Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "High": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Low": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Bid": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Ask": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "Sharia Compliant": st.column_config.TextColumn(
+                            "Sharia Compliant",
+                            help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                        )
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No assets match the search criteria.")
         else:
-            st.info("No stock data available.")
+            st.info("No stock data available. Ensure market-data.json and kmi_shares.txt are present.")
 
     elif page == "Notifications":
         st.header("Notifications")
+        st.write("Real-time alerts for price movements, trades, and portfolio updates.")
         alerts_df = tracker.get_alerts()
         if not alerts_df.empty:
-            st.dataframe(alerts_df)
+            alerts_df['date'] = pd.to_datetime(alerts_df['date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            st.dataframe(alerts_df, use_container_width=True)
         else:
-            st.info("No recent notifications.")
+            st.info("No notifications available. Add transactions to generate alerts.")
 
     elif page == "Transactions":
         st.header("Transaction History")
         if tracker.transactions:
             trans_df = pd.DataFrame(tracker.transactions)
-            trans_df.index = pd.RangeIndex(start=1, stop=len(trans_df) + 1, step=1)
-            trans_df.index.name = "SNo"
-            st.dataframe(trans_df)
-            if st.button("Delete Last Transaction"):
-                try:
-                    tracker.delete_transaction(len(tracker.transactions) - 1)
-                    st.session_state.data_changed = True
-                    st.success("Last transaction deleted.")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(f"Error: {e}")
+            if not trans_df.empty:
+                trans_df['date'] = pd.to_datetime(trans_df['date']).dt.strftime('%Y-%m-%d')
+                trans_df['Select'] = False
+                edited_df = st.data_editor(
+                    trans_df,
+                    column_config={
+                        "Select": st.column_config.CheckboxColumn(),
+                        "total": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "realized": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "price": st.column_config.NumberColumn(format="PKR %.2f"),
+                        "fee": st.column_config.NumberColumn(format="PKR %.2f")
+                    },
+                    use_container_width=True,
+                    hide_index=False
+                )
+                selected = edited_df[edited_df['Select']].index.tolist()
+                if st.button("Delete Selected Transactions"):
+                    try:
+                        for index in sorted(selected, reverse=True):
+                            tracker.delete_transaction(index)
+                        st.success("Selected transactions deleted successfully!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
         else:
-            st.info("No transactions recorded.")
+            st.info("No transactions recorded. Add transactions via 'Add Transaction'.")
 
     elif page == "Current Prices":
         st.header("Current Prices")
-        if tracker.current_prices:
-            prices_df = pd.DataFrame([(k, v['price']) for k, v in tracker.current_prices.items()], columns=['Stock', 'Price'])
-            st.dataframe(prices_df)
+        prices_list = [{
+            'Ticker': k,
+            'Price': v['price'],
+            'Sharia Compliant': '✅' if v['sharia'] else '❌',
+            'Type': v.get('type', 'Stock'),
+            'Change': v.get('change', 0.0),
+            'Change %': v.get('changePercent', 0.0),
+            'Volume': v.get('volume', 0),
+            'Trades': v.get('trades', 0),
+            'Value': v.get('value', 0.0),
+            'High': v.get('high', 0.0),
+            'Low': v.get('low', 0.0),
+            'Bid': v.get('bid', 0.0),
+            'Ask': v.get('ask', 0.0),
+            'Bid Volume': v.get('bidVol', 0),
+            'Ask Volume': v.get('askVol', 0),
+            'Timestamp': v.get('timestamp', datetime.now())
+        } for k, v in tracker.current_prices.items()]
+        prices_df = pd.DataFrame(prices_list)
+        if not prices_df.empty:
+            prices_df['Timestamp'] = pd.to_datetime(prices_df['Timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            edited_df = st.data_editor(
+                prices_df,
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Change": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Change %": st.column_config.NumberColumn(format="%.2f%"),
+                    "Value": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "High": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Low": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Bid": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Ask": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Sharia Compliant": st.column_config.TextColumn(
+                        "Sharia Compliant",
+                        help="✅ = Sharia Compliant, ❌ = Non-Compliant"
+                    )
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                key="prices_editor"
+            )
+            if st.button("Update Prices"):
+                updated_prices = {}
+                for _, row in edited_df.iterrows():
+                    ticker = row['Ticker']
+                    updated_prices[ticker] = {
+                        'price': row['Price'],
+                        'sharia': row['Sharia Compliant'] == '✅',
+                        'type': row['Type'],
+                        'change': row['Change'],
+                        'changePercent': row['Change %'],
+                        'volume': row['Volume'],
+                        'trades': row['Trades'],
+                        'value': row['Value'],
+                        'high': row['High'],
+                        'low': row['Low'],
+                        'bid': row['Bid'],
+                        'ask': row['Ask'],
+                        'bidVol': row['Bid Volume'],
+                        'askVol': row['Ask Volume'],
+                        'timestamp': pd.to_datetime(row['Timestamp'])
+                    }
+                tracker.current_prices = updated_prices
+                st.success("Prices updated successfully!")
         else:
-            st.info("No price data available.")
+            st.info("No stock data available. Ensure market-data.json and kmi_shares.txt are present.")
 
     elif page == "Add Transaction":
         st.header("Add Transaction")
         with st.form("transaction_form"):
-            date = st.date_input("Date", datetime.now())
-            ticker = st.selectbox("Stock", list(tracker.current_prices.keys()) + ["Cash"])
-            trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit", "Withdraw"])
-            quantity = st.number_input("Quantity/Amount", min_value=0.0, step=1.0)
-            price = st.number_input("Price", min_value=0.0, step=0.01) if trans_type in ["Buy", "Sell"] else 0.0
-            fee = st.number_input("Fee", min_value=0.0, step=0.01, value=0.0)
+            col1, col2 = st.columns(2)
+            with col1:
+                date = st.date_input("Date", value=datetime.now())
+                ticker_options = sorted(tracker.current_prices.keys())
+                ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
+                trans_type = st.selectbox("Type", ["Buy", "Sell", "Deposit", "Withdraw"])
+            with col2:
+                quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
+                price = st.number_input("Price", min_value=0.0, step=0.01, value=tracker.current_prices.get(ticker, {'price': 0.0})['price'] if ticker else 0.0)
+                fee = st.number_input("Fee", min_value=0.0, value=0.0, step=0.01)
             submit = st.form_submit_button("Add Transaction")
             if submit:
                 try:
-                    tracker.add_transaction(date, ticker, trans_type, quantity, price, fee)
-                    st.session_state.data_changed = True
-                    st.success("Transaction added successfully.")
+                    tracker.add_transaction(date, ticker if trans_type in ["Buy", "Sell"] else None, trans_type, quantity, price, fee)
+                    st.success("Transaction added successfully!")
                     st.rerun()
                 except ValueError as e:
                     st.error(f"Error: {e}")
@@ -684,23 +978,27 @@ def main():
     elif page == "Add Dividend":
         st.header("Add Dividend")
         with st.form("dividend_form"):
-            ticker = st.selectbox("Stock", list(tracker.current_prices.keys()))
-            amount = st.number_input("Amount", min_value=0.0, step=0.01)
+            ticker_options = sorted(tracker.current_prices.keys())
+            ticker = st.selectbox("Ticker", ticker_options, index=0 if ticker_options else None)
+            amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
             submit = st.form_submit_button("Add Dividend")
             if submit:
-                tracker.add_dividend(ticker, amount)
-                st.session_state.data_changed = True
-                st.success("Dividend added successfully.")
-                st.rerun()
+                try:
+                    tracker.add_dividend(ticker, amount)
+                    st.success("Dividend added successfully!")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(f"Error: {e}")
 
     elif page == "Broker Fees":
-        st.header("Broker Fees Configuration")
-        with st.form("fees_form"):
-            low_price_fee = st.number_input("Low Price Fee (P <= 20)", min_value=0.0, step=0.001, value=tracker.broker_fees['low_price_fee'])
-            sst_low_price = st.number_input("SST for Low Price", min_value=0.0, step=0.0001, value=tracker.broker_fees['sst_low_price'])
-            brokerage_rate = st.number_input("Brokerage Rate (P > 20)", min_value=0.0, step=0.0001, value=tracker.broker_fees['brokerage_rate'])
-            sst_rate = st.number_input("SST Rate", min_value=0.0, step=0.01, value=tracker.broker_fees['sst_rate'])
-            submit = st.form_submit_button("Update Fees")
+        st.header("Broker Fees")
+        st.write("Define your broker fees for distribution calculations.")
+        with st.form("broker_fees_form"):
+            low_price_fee = st.number_input("Low Price Fee (P <= 20)", min_value=0.0, value=tracker.broker_fees.get('low_price_fee', 0.03), step=0.01)
+            sst_low_price = st.number_input("SST for Low Price (P <= 20)", min_value=0.0, value=tracker.broker_fees.get('sst_low_price', 0.0045), step=0.0001)
+            brokerage_rate = st.number_input("Brokerage Rate (P > 20)", min_value=0.0, value=tracker.broker_fees.get('brokerage_rate', 0.0015), step=0.0001)
+            sst_rate = st.number_input("SST Rate for Brokerage", min_value=0.0, value=tracker.broker_fees.get('sst_rate', 0.15), step=0.01)
+            submit = st.form_submit_button("Update Broker Fees")
             if submit:
                 tracker.broker_fees = {
                     'low_price_fee': low_price_fee,
@@ -708,25 +1006,37 @@ def main():
                     'brokerage_rate': brokerage_rate,
                     'sst_rate': sst_rate
                 }
-                st.session_state.data_changed = True
-                st.success("Broker fees updated.")
-                st.rerun()
+                st.success("Broker fees updated successfully!")
 
     elif page == "Guide":
-        st.header("User Guide")
-        st.write("""
-        - **Dashboard**: View an overview of your portfolio performance.
-        - **Portfolio**: See detailed holdings and allocations.
-        - **Distribution**: Manage target allocations for investment distribution.
-        - **Cash**: Track cash transactions.
-        - **Stock Explorer**: Explore current stock prices.
-        - **Notifications**: View recent alerts.
-        - **Transactions**: Review and delete transaction history.
-        - **Current Prices**: View all current stock prices.
-        - **Add Transaction**: Add new buy, sell, deposit, or withdrawal transactions.
-        - **Add Dividend**: Record dividend income.
-        - **Broker Fees**: Configure brokerage and tax rates.
-        """)
+        st.header("Guide to Investment Tracking")
+        st.write("Step-by-step guide to get started with TrackerBazaar:")
 
-if __name__ == "__main__":
+        st.subheader("1. Load Data")
+        st.write("Ensure market-data.json and kmi_shares.txt are in the repository. These files provide stock prices and Sharia compliance.")
+
+        st.subheader("2. Add Cash")
+        st.write("Go to the 'Cash' page, use 'Add Cash' to deposit funds into your portfolio. This increases your cash balance for investments.")
+
+        st.subheader("3. Set Target Allocations")
+        st.write("Go to the 'Distribution' page, select stocks in 'Edit Target Allocations', and set percentages (must sum to 100%). Update to save.")
+
+        st.subheader("4. Calculate Sample Distribution")
+        st.write("In 'Distribution', input cash in 'Sample Distribution' to see how it would be allocated based on targets (with fees). This is a preview; it doesn't execute buys.")
+
+        st.subheader("5. Add Transactions")
+        st.write("Go to 'Add Transaction' to buy/sell stocks, deposit/withdraw cash. Transactions update your portfolio automatically.")
+
+        st.subheader("6. Monitor Portfolio")
+        st.write("View 'Dashboard' for overall metrics, 'Portfolio' for holdings details, 'Stock Explorer' for market data, and 'Notifications' for alerts.")
+
+        st.subheader("7. Rebalance and Edit")
+        st.write("Use 'Distribution' to edit/remove allocations, 'Broker Fees' to customize fees, and 'Current Prices' to update stock prices.")
+
+        st.subheader("8. Withdraw Cash")
+        st.write("In 'Cash', use 'Withdraw Cash' to remove funds from your portfolio.")
+
+        st.write("Repeat steps 3-5 for rebalancing as needed. Track your journey with charts on the Dashboard.")
+
+if __name__ == '__main__':
     main()
