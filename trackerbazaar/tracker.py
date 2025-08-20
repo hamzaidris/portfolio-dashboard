@@ -28,10 +28,10 @@ class PortfolioTracker:
         self.realized_gain = 0.0
         self.cash = 0.0
         self.initial_cash = 0.0
-        self.current_prices = load_psx_data()
-        self.target_allocations = {ticker: 0.0 for ticker in self.current_prices.keys()}
+        self.current_prices = {}  # Initialized empty, to be set by initialize_tracker
+        self.target_allocations = {}
         self.target_investment = 410000.0
-        self.last_div_per_share = {ticker: 0.0 for ticker in self.current_prices.keys()}
+        self.last_div_per_share = {}
         self.cash_deposits = []
         self.alerts = []  # Store notifications
         self.filer_status = 'Filer'  # Default tax status
