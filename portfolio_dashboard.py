@@ -1,7 +1,27 @@
+# portfolio_dashboard.py
+import sys
+import os
 import streamlit as st
-from trackerbazaar import dashboard, portfolio, distribution, cash, stock_explorer, notifications, transactions, current_prices, add_transaction, add_dividend, broker_fees, guide
+from trackerbazaar.dashboard import render_dashboard
+from trackerbazaar.portfolio import render_portfolio
+from trackerbazaar.distribution import render_distribution
+from trackerbazaar.cash import render_cash
+from trackerbazaar.stock_explorer import render_stock_explorer
+from trackerbazaar.notifications import render_notifications
+from trackerbazaar.transactions import render_transactions
+from trackerbazaar.current_prices import render_current_prices
+from trackerbazaar.add_transaction import render_add_transaction
+from trackerbazaar.add_dividend import render_add_dividend
+from trackerbazaar.broker_fees import render_broker_fees
+from trackerbazaar.guide import render_guide
 from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
 from datetime import datetime
+
+# Add parent directory to sys.path for package resolution
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Debug: Print current working directory
+print("Current working directory:", os.getcwd())
 
 def main():
     st.set_page_config(page_title="TrackerBazaar - Portfolio Dashboard", layout="wide")
@@ -33,29 +53,29 @@ def main():
 
     # Call the appropriate tab function
     if page == "Dashboard":
-        dashboard.render_dashboard(tracker)
+        render_dashboard(tracker)
     elif page == "Portfolio":
-        portfolio.render_portfolio(tracker)
+        render_portfolio(tracker)
     elif page == "Distribution":
-        distribution.render_distribution(tracker)
+        render_distribution(tracker)
     elif page == "Cash":
-        cash.render_cash(tracker)
+        render_cash(tracker)
     elif page == "Stock Explorer":
-        stock_explorer.render_stock_explorer(tracker)
+        render_stock_explorer(tracker)
     elif page == "Notifications":
-        notifications.render_notifications(tracker)
+        render_notifications(tracker)
     elif page == "Transactions":
-        transactions.render_transactions(tracker)
+        render_transactions(tracker)
     elif page == "Current Prices":
-        current_prices.render_current_prices(tracker)
+        render_current_prices(tracker)
     elif page == "Add Transaction":
-        add_transaction.render_add_transaction(tracker)
+        render_add_transaction(tracker)
     elif page == "Add Dividend":
-        add_dividend.render_add_dividend(tracker)
+        render_add_dividend(tracker)
     elif page == "Broker Fees":
-        broker_fees.render_broker_fees(tracker)
+        render_broker_fees(tracker)
     elif page == "Guide":
-        guide.render_guide()
+        render_guide()
 
 if __name__ == '__main__':
     main()
