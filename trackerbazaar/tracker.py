@@ -13,13 +13,13 @@ def initialize_tracker(tracker):
         tracker.target_allocations = {ticker: 0.0 for ticker in prices.keys()}
         # Add a default cash deposit if no transactions exist
         if not tracker.transactions:
-            tracker.add_transaction(datetime(2025, 8, 20, 11, 59), None, 'Deposit', 10000.0, 0.0)
+            tracker.add_transaction(datetime(2025, 8, 20, 12, 3), None, 'Deposit', 10000.0, 0.0)
         st.success("Tracker initialized with current prices and default cash.")
     else:
         st.warning("No price data available. Initialization skipped.")
     # Ensure initial cash and holdings are set
     if not tracker.cash_deposits:
-        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 11, 59), 'amount': 10000.0}]
+        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 12, 3), 'amount': 10000.0}]
         tracker.cash = 10000.0
         tracker.initial_cash = 10000.0
 
@@ -173,3 +173,140 @@ class PortfolioTracker:
         portfolio = []
         current_prices = current_prices or self.current_prices
         total_value = self.cash
+        for ticker, holding in self.holdings.items():
+            if ticker in current_prices:
+                market_value = holding['shares'] * current_prices[ticker]['price']
+                total_invested = holding['total_cost']
+                gain_loss = market_value - total_invested
+                dividends = self.dividends.get(ticker, 0.0)
+                pct_gain = (gain_loss / total_invested * 100) if total_invested > 0 else 0.0
+                roi = ((market_value + dividends) / total_invested * 100) if total_invested > 0 else 0.0
+                current_alloc = (market_value / (total_value + market_value) * 100) if total_value + market_value > 0 else 0.0
+                target_alloc = self.target_allocations.get(ticker, 0.0)
+                alloc_delta = current_alloc - target_alloc
+                cgt_potential = gain_loss * (0.125 if self.filer_status == 'Filer' else 0.15) if gain_loss > 0 else 0.0
+                portfolio.append({
+                    'Stock': ticker,
+                    'Shares': holding['shares'],
+                    'Market Value': market_value,
+                    'Total Invested': total_invested,
+                    'Gain/Loss': gain_loss,
+                    'Dividends': dividends,
+                    '% Gain': pct_gain,
+                    'ROI %': roi,
+                    'Current Allocation %': current_alloc,
+                    'Target Allocation %': target_alloc,
+                    'Allocation Delta %': alloc_delta,
+                    'CGT (Potential)': cgt_potential,
+                    'Sharia Compliant': '✅' if current_prices[ticker]['sharia'] else '❌'
+                })
+                total_value += market_value
+        return pd.DataFrame(portfolio) if portfolio else pd.DataFrame()
+
+    def get_dashboard(self):
+        """Return a dictionary of key portfolio metrics."""
+        portfolio_df = self.get_portfolio()
+        total_portfolio_value = self.cash
+        total_invested = 0.0
+        total_unrealized_gain = 0.0
+        total_dividends = sum(self.dividends.values(), 0.0)
+
+        for _, row in portfolio_df.iterrows():
+            total_portfolio_value += row['Market Value']
+            total_invested += row['Total Invested']
+            total_unrealized_gain += row['Gain/Loss']
+
+        total_roi = ((total_portfolio_value + total_dividends) / (total_invested or 1) * 100) if total_invested > 0 else 0.0
+        percent_of_target = (total_invested / self.target_investment * 100) if self.target_investment > 0 else 0.0
+
+        return {
+            'Total Portfolio Value': total_portfolio_value,
+            'Total ROI %': total_roi,
+            'Total Dividends': total_dividends,
+            'Total Invested': total_invested,
+            'Total Realized Gain': self.realized_gain,
+            'Total Unrealized Gain': total_unrealized_gain,
+            '% of Target Invested': percent_of_target,
+            'Cash Balance': self.cash
+        }
+
+    def get_invested_timeline(self):
+        """Return a DataFrame of invested amount over time."""
+        invested_history = []
+        for trans in sorted(self.transactions, key=lambda x: x['date']):
+            if trans['type'] in ['Buy', 'Deposit']:
+                invested = -trans['total'] if trans['type'] == 'Buy' else trans['total']
+                invested_history.append({'date': trans['date'], 'invested': invested})
+        return pd.DataFrame(invested_history) if invested_history else pd.DataFrame()
+
+    def get_profit_loss_timeline(self):
+        """Return a DataFrame of approximate profit/loss over time."""
+        pl_history = []
+        cumulative_pl = 0.0
+        for trans in sorted(self.transactions, key=lambda x: x['date']):
+            if trans['type'] == 'Sell':
+                cumulative_pl += trans['realized']
+                pl_history.append({'date': trans['date'], 'profit_loss': cumulative_pl})
+        return pd.DataFrame(pl_history) if pl_history else pd.DataFrame()
+
+    def update_filer_status(self, status):
+        """Update the tax filer status."""
+        if status not in ['Filer', 'Non-Filer']:
+            raise ValueError("Invalid filer status. Use 'Filer' or 'Non-Filer'.")
+        self.filer_status = status
+        st.session_state.update_filer_status = True
+
+    def update_target_allocations(self, allocations):
+        """Update target allocations, ensuring they sum to 100%."""
+        total_alloc = sum(alloc for alloc in allocations.values() if alloc > 0)
+        if total_alloc > 100.0 or total_alloc < 99.9:  # Allow slight float precision
+            raise ValueError("Target allocations must sum to 100%.")
+        self.target_allocations = {ticker: alloc for ticker, alloc in allocations.items()}
+        st.session_state.update_allocations = True
+
+    def get_cash_to_invest(self):
+        """Return available cash for investment."""
+        return self.cash
+
+    def calculate_distribution(self, cash):
+        """Calculate how cash would be distributed based on target allocations."""
+        if not self.target_allocations or sum(self.target_allocations.values()) == 0:
+            return pd.DataFrame()
+        total_alloc = sum(alloc for alloc in self.target_allocations.values() if alloc > 0)
+        if total_alloc == 0:
+            return pd.DataFrame()
+        distribution = []
+        leftover = cash
+        for ticker, alloc in self.target_allocations.items():
+            if alloc > 0 and ticker in self.current_prices:
+                target_amount = (alloc / 100) * cash
+                price = self.current_prices[ticker]['price']
+                quantity = target_amount // price
+                if quantity > 0:
+                    fee = self._calculate_fee(price, quantity)
+                    sst = self._calculate_sst(price, quantity, fee)
+                    net_invested = quantity * price + fee + sst
+                    distributed = min(net_invested, target_amount)
+                    leftover -= distributed
+                    distribution.append({
+                        'Stock': ticker,
+                        'Distributed': distributed,
+                        'Price': price,
+                        'Fee': fee,
+                        'SST': sst,
+                        'Net Invested': net_invested,
+                        'Leftover': leftover if i == len(self.target_allocations) - 1 else 0.0
+                    })
+        return pd.DataFrame(distribution)
+
+    def _calculate_fee(self, price, quantity):
+        """Calculate brokerage fee based on price and quantity."""
+        if price <= 20:
+            return quantity * self.broker_fees['low_price_fee']
+        return quantity * price * self.broker_fees['brokerage_rate']
+
+    def _calculate_sst(self, price, quantity, fee):
+        """Calculate SST based on price and fee."""
+        if price <= 20:
+            return quantity * self.broker_fees['sst_low_price']
+        return fee * self.broker_fees['sst_rate']
