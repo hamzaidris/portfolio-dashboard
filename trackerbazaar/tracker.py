@@ -266,8 +266,8 @@ class PortfolioTracker:
         return self.cash
 
     def calculate_distribution(self, cash):
-        """Calculate how cash would be distributed based on target allocations."""
-        if not self.target_allocations or sum(self.target_allocations.values()) == 0:
+        """Calculate how many stocks can be bought based on current prices and target allocations."""
+        if not self.target_allocations or sum(self.target_allocations.values()) == 0 or not cash:
             return pd.DataFrame()
         total_alloc = sum(alloc for alloc in self.target_allocations.values() if alloc > 0)
         if total_alloc == 0:
@@ -276,8 +276,8 @@ class PortfolioTracker:
         leftover = cash
         for i, (ticker, alloc) in enumerate(self.target_allocations.items()):
             if alloc > 0 and ticker in self.current_prices:
-                target_amount = (alloc / 100) * cash
                 price = self.current_prices[ticker]['price']
+                target_amount = (alloc / 100) * cash
                 quantity = target_amount // price
                 if quantity > 0:
                     fee = self._calculate_fee(price, quantity)
@@ -287,7 +287,7 @@ class PortfolioTracker:
                     leftover -= distributed
                     distribution.append({
                         'Stock': ticker,
-                        'Distributed': distributed,
+                        'Quantity': quantity,
                         'Price': price,
                         'Fee': fee,
                         'SST': sst,
