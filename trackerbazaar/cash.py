@@ -26,7 +26,7 @@ def render_cash(tracker):
     with tabs[1]:
         st.subheader("Add Cash")
         date = st.date_input("Date", value=datetime.now(), key="add_cash_date")
-        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0)
+        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0, key="add_cash_amount")
         if st.button("Add Cash", help="Add cash to your portfolio"):
             try:
                 tracker.add_transaction(date, None, "Deposit", amount, 0.0)
@@ -43,7 +43,7 @@ def render_cash(tracker):
     with tabs[3]:
         st.subheader("Withdrawals")
         date = st.date_input("Date", value=datetime.now(), key="withdraw_date")
-        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0)
+        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0, key="withdraw_amount")
         if st.button("Withdraw", help="Withdraw cash from your portfolio"):
             try:
                 tracker.add_transaction(date, None, "Withdraw", amount, 0.0)
