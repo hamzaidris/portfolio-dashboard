@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from .tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_current_prices(tracker):
     st.header("Current Prices")
@@ -50,4 +50,23 @@ def render_current_prices(tracker):
             updated_prices = {}
             for _, row in edited_df.iterrows():
                 ticker = row['Ticker']
-                updated_prices[t
+                updated_prices[ticker] = {
+                    'price': row['Price'],
+                    'sharia': row['Sharia Compliant'] == '✅',
+                    'type': row['Type'],
+                    'change': row['Change'],
+                    'changePercent': row['Change %'] / 100,
+                    'volume': row['Volume'],
+                    'trades': row['Trades'],
+                    'value': row['Value'],
+                    'high': row['High'],
+                    'low': row['Low'],
+                    'bid': row['Bid'],
+                    'ask': row['Ask'],
+                    'bidVol': row['Bid Volume'],
+                    'askVol': row['Ask Volume'],
+                    'timestamp': pd.to_datetime(row['Timestamp']).timestamp()
+                }
+            tracker.current_prices = updated_prices
+            st.session_state.data_changed = True
+            st.success("Prices updated successfully!")
