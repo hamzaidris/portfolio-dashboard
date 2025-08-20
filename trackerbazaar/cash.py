@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from .tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_cash(tracker):
     st.header("Cash Summary")
@@ -26,12 +26,13 @@ def render_cash(tracker):
 
     with tabs[1]:
         with st.form("add_cash_form"):
-            date = st.date_input("Deposit Date", value=datetime.now())
+            date = st.date_input("Deposit Date", value=datetime(2025, 8, 20, 11, 41))
             amount = st.number_input("Deposit Amount (PKR)", min_value=0.0, step=100.0)
             submit = st.form_submit_button("Add Cash")
             if submit:
                 try:
                     tracker.add_transaction(date, None, 'Deposit', amount, 0.0)
+                    st.session_state.data_changed = True
                     st.success("Cash deposited successfully!")
                     st.rerun()
                 except ValueError as e:
@@ -57,12 +58,13 @@ def render_cash(tracker):
     with tabs[3]:
         st.subheader("Withdraw Cash")
         with st.form("withdraw_cash_form"):
-            date = st.date_input("Withdrawal Date", value=datetime.now())
+            date = st.date_input("Withdrawal Date", value=datetime(2025, 8, 20, 11, 41))
             amount = st.number_input("Withdrawal Amount (PKR)", min_value=0.0, step=100.0)
             submit = st.form_submit_button("Withdraw Cash")
             if submit:
                 try:
                     tracker.add_transaction(date, None, 'Withdraw', amount, 0.0)
+                    st.session_state.data_changed = True
                     st.success("Cash withdrawn successfully!")
                     st.rerun()
                 except ValueError as e:
