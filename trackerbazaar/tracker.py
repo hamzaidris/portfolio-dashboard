@@ -3,6 +3,26 @@ import pandas as pd
 from datetime import datetime
 from trackerbazaar.data import load_psx_data, excel_date_to_datetime
 
+def initialize_tracker(tracker):
+    """Initialize the PortfolioTracker with default data and settings."""
+    # Load current prices and update tracker
+    prices = load_psx_data()
+    if prices:
+        tracker.current_prices = prices
+        # Set default target allocations (e.g., 0% for all tickers)
+        tracker.target_allocations = {ticker: 0.0 for ticker in prices.keys()}
+        # Add a default cash deposit if no transactions exist
+        if not tracker.transactions:
+            tracker.add_transaction(datetime(2025, 8, 20, 11, 59), None, 'Deposit', 10000.0, 0.0)
+        st.success("Tracker initialized with current prices and default cash.")
+    else:
+        st.warning("No price data available. Initialization skipped.")
+    # Ensure initial cash and holdings are set
+    if not tracker.cash_deposits:
+        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 11, 59), 'amount': 10000.0}]
+        tracker.cash = 10000.0
+        tracker.initial_cash = 10000.0
+
 class PortfolioTracker:
     def __init__(self):
         self.transactions = []
@@ -128,4 +148,28 @@ class PortfolioTracker:
             self.add_alert(f"Deleted Buy transaction for {trans['quantity']} shares of {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
         elif trans['type'] == 'Sell':
             self.cash -= trans['total']
-            self.realized_gain
+            self.realized_gain -= trans['realized']
+            if trans['ticker'] not in self.holdings:
+                self.holdings[trans['ticker']] = {'shares': 0.0, 'total_cost': 0.0, 'purchase_date': trans['date']}
+            gain = trans['realized'] + trans['fee']
+            avg = trans['price'] - gain / trans['quantity'] if trans['quantity'] > 0 else 0
+            self.holdings[trans['ticker']]['shares'] += trans['quantity']
+            self.holdings[trans['ticker']]['total_cost'] += trans['quantity'] * avg
+            self.add_alert(f"Deleted Sell transaction for {trans['quantity']} shares of {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
+        elif trans['type'] == 'Deposit':
+            self.cash -= trans['total']
+            self.initial_cash -= trans['total']
+            self.cash_deposits = [d for d in self.cash_deposits if d['amount'] != trans['total'] or d['date'] != trans['date']]
+            self.add_alert(f"Deleted Deposit of PKR {trans['total']} on {trans['date'].strftime('%Y-%m-%d')}")
+        elif trans['type'] == 'Withdraw':
+            self.cash += trans['total']
+            self.add_alert(f"Deleted Withdrawal of PKR {-trans['total']} on {trans['date'].strftime('%Y-%m-%d')}")
+        elif trans['type'] == 'Dividend':
+            self.cash -= trans['total']
+            self.dividends[trans['ticker']] -= trans['total']
+            self.add_alert(f"Deleted Dividend of PKR {trans['total']} for {trans['ticker']} on {trans['date'].strftime('%Y-%m-%d')}")
+
+    def get_portfolio(self, current_prices=None):
+        portfolio = []
+        current_prices = current_prices or self.current_prices
+        total_value = self.cash
