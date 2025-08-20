@@ -213,7 +213,8 @@ class PortfolioTracker:
             total_invested += row['Total Invested']
             total_unrealized_gain += row['Gain/Loss']
 
-        total_roi = ((total_portfolio_value + total_dividends) / (total_invested or 1) * 100) if total_invested > 0 else 0.0
+        total_cash_deposited = sum(trans['total'] for trans in self.transactions if trans['type'] == 'Deposit')
+        total_roi = (self.realized_gain / total_cash_deposited * 100) if total_cash_deposited > 0 else 0.0
         percent_of_target = (total_invested / self.target_investment * 100) if self.target_investment > 0 else 0.0
 
         return {
