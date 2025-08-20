@@ -50,11 +50,14 @@ def main():
     portfolio_manager = PortfolioManager()
     selected_portfolio = portfolio_manager.select_portfolio()
     if selected_portfolio is None:
-        if st.button("Create New Portfolio"):
+        with st.form(key="create_portfolio_form"):
             portfolio_name = st.text_input("Enter Portfolio Name", key="new_portfolio_name")
-            if st.button("Create", key="create_portfolio"):
+            submit_button = st.form_submit_button("Create")
+            if submit_button:
                 if portfolio_manager.create_portfolio(portfolio_name):
                     st.success(f"Portfolio '{portfolio_name}' created!")
+                    # Automatically select the new portfolio and rerun
+                    st.session_state.selected_portfolio = portfolio_name
                     st.rerun()
                 else:
                     st.error("Portfolio name already exists!")
