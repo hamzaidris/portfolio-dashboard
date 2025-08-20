@@ -1,11 +1,11 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 
 def render_cash(tracker):
-    st.header("Cash Summary")
-    tabs = st.tabs(["Cash Flow", "Add Cash", "Cash Available", "Withdraw Cash"])
+    st.header("Cash Management")
+    st.write("Manage your cash deposits, withdrawals, and view total cash.")
+
+    tabs = st.tabs(["Cash Flow", "Add Cash", "Cash Available", "Withdrawals"])
 
     with tabs[0]:
         cash_df = tracker.get_cash_summary()
@@ -14,58 +14,41 @@ def render_cash(tracker):
             st.dataframe(
                 cash_df,
                 column_config={
-                    "quantity": st.column_config.NumberColumn(format="PKR %.2f")
+                    "quantity": st.column_config.NumberColumn("Amount", format="PKR %.2f")
                 },
                 use_container_width=True
             )
+            total_cash = sum(trans['total'] for trans in tracker.transactions if trans['type'] == 'Deposit')
+            st.write(f"**Total Cash Deposited:** PKR {total_cash:,.2f}")
         else:
-            st.info("No cash transactions recorded. Add a deposit to start.")
-        st.metric("Current Cash Balance", f"PKR {tracker.cash:,.2f}")
-        dashboard = tracker.get_dashboard()
-        st.metric("Total Invested Amount", f"PKR {dashboard['Total Invested']:,.2f}")
+            st.info("No cash transactions recorded.")
 
     with tabs[1]:
-        with st.form("add_cash_form"):
-            date = st.date_input("Deposit Date", value=datetime(2025, 8, 20, 11, 41))
-            amount = st.number_input("Deposit Amount (PKR)", min_value=0.0, step=100.0)
-            submit = st.form_submit_button("Add Cash")
-            if submit:
-                try:
-                    tracker.add_transaction(date, None, 'Deposit', amount, 0.0)
-                    st.session_state.data_changed = True
-                    st.success("Cash deposited successfully!")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(f"Error: {e}")
+        st.subheader("Add Cash")
+        date = st.date_input("Date", value=datetime.now())
+        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0)
+        if st.button("Add Cash"):
+            try:
+                tracker.add_transaction(date, None, "Deposit", amount, 0.0)
+                st.success("Cash has been added")
+                st.session_state.data_changed = True
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
 
     with tabs[2]:
-        cash_to_invest = tracker.get_cash_to_invest()
-        st.metric("Cash Available", f"PKR {cash_to_invest:,.2f}")
-        deposits_df = pd.DataFrame(tracker.cash_deposits)
-        if not deposits_df.empty:
-            deposits_df['date'] = pd.to_datetime(deposits_df['date']).dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                deposits_df,
-                column_config={
-                    "amount": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
-        else:
-            st.info("No new cash deposits recorded.")
-        st.write(f"Previous Cash Available: PKR {tracker.cash:,.2f}")
+        st.subheader("Cash Available")
+        st.write(f"**Available Cash:** PKR {tracker.cash:,.2f}")
 
     with tabs[3]:
-        st.subheader("Withdraw Cash")
-        with st.form("withdraw_cash_form"):
-            date = st.date_input("Withdrawal Date", value=datetime(2025, 8, 20, 11, 41))
-            amount = st.number_input("Withdrawal Amount (PKR)", min_value=0.0, step=100.0)
-            submit = st.form_submit_button("Withdraw Cash")
-            if submit:
-                try:
-                    tracker.add_transaction(date, None, 'Withdraw', amount, 0.0)
-                    st.session_state.data_changed = True
-                    st.success("Cash withdrawn successfully!")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(f"Error: {e}")
+        st.subheader("Withdrawals")
+        date = st.date_input("Date", value=datetime.now())
+        amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0)
+        if st.button("Withdraw"):
+            try:
+                tracker.add_transaction(date, None, "Withdraw", amount, 0.0)
+                st.success("Transaction has been added")
+                st.session_state.data_changed = True
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
