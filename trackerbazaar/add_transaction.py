@@ -28,7 +28,10 @@ def render_add_transaction(tracker):
     if st.button("Add Transaction"):
         try:
             tracker.add_transaction(date, ticker, trans_type, quantity, price, fee)
-            st.success(f"Transaction added: {trans_type} {quantity} {'shares' if trans_type in ['Buy', 'Sell'] else ''} of {ticker if ticker else ''} at PKR {price} on {date.strftime('%Y-%m-%d')}")
+            if trans_type == "Deposit":
+                st.success("Cash has been added")
+            else:
+                st.success("Transaction has been added")
             st.session_state.data_changed = True
             st.rerun()
         except ValueError as e:
