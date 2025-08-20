@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from .tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_add_dividend(tracker):
     st.header("Add Dividend")
