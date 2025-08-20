@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 
 def render_stock_explorer(tracker):
