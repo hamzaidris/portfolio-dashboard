@@ -82,6 +82,18 @@ def load_psx_data():
             return {}
         st.info(f"Loaded {len(prices)} tickers from market-data.json")
         return prices
+    except FileNotFoundError:
+        logger.error("market-data.json not found. Returning empty data.")
+        st.warning("market-data.json not found. Please ensure the file is present.")
+        return {}
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding market-data.json: {e}. Returning empty data.")
+        st.warning(f"Error decoding market-data.json: {e}. Please check the file.")
+        return {}
+    except Exception as e:
+        logger.error(f"Unexpected error loading market-data.json: {e}. Returning empty data.")
+        st.warning(f"Unexpected error loading market-data.json: {e}. Please check the file.")
+        return {}
 
 def excel_date_to_datetime(serial):
     """Convert Excel serial date to Python datetime."""
