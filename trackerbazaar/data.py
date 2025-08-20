@@ -11,6 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour, reload if files change
 def load_psx_data():
     """Load stock data from market-data.json and Sharia compliance from kmi_shares.txt."""
     sharia_compliant = set()
@@ -76,7 +77,7 @@ def load_psx_data():
                         logger.warning(f"Invalid price for {ticker}: {price}")
                         continue
 
-        logger.info(f"Processed {len(prices)} tickers from market-data.json")
+        logger.info(f"Loaded {len(prices)} tickers from market-data.json")
         if not prices:
             st.warning("No valid data in market-data.json. Please check the file.")
             return {}
