@@ -1,13 +1,13 @@
 import streamlit as st
 from datetime import datetime
-from .tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_add_transaction(tracker):
     st.header("Add Transaction")
     with st.form("transaction_form"):
         col1, col2 = st.columns(2)
         with col1:
-            date = st.date_input("Date", value=datetime(2025, 8, 20))  # Default to today
+            date = st.date_input("Date", value=datetime(2025, 8, 20, 11, 41))  # Current date and time
             ticker_options = sorted(tracker.current_prices.keys())
             ticker = st.selectbox("Ticker", ["Cash"] + ticker_options, index=0 if ticker_options else 0)
         with col2:
