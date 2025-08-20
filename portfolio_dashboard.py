@@ -9,6 +9,7 @@ from trackerbazaar.dashboard import render_dashboard
 from trackerbazaar.stock_explorer import render_stock_explorer
 from trackerbazaar.guide import render_guide
 from trackerbazaar.signup import render_signup
+from trackerbazaar.distribution import render_distribution
 
 def main():
     st.set_page_config(layout="wide", page_title="Portfolio Dashboard", page_icon="📈")
@@ -78,7 +79,8 @@ def main():
         "Stock Explorer": render_stock_explorer,
         "Notifications": lambda t: st.write("Notifications page (under development)"),
         "Guide": render_guide,
-        "Signup": render_signup
+        "Signup": render_signup,
+        "Distribution": render_distribution
     }
     page = st.sidebar.selectbox("Navigate", list(pages.keys()), key="nav_page")
 
