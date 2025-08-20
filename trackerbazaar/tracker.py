@@ -13,13 +13,13 @@ def initialize_tracker(tracker):
         tracker.target_allocations = {ticker: 0.0 for ticker in prices.keys()}
         # Add a default cash deposit if no transactions exist
         if not tracker.transactions:
-            tracker.add_transaction(datetime(2025, 8, 20, 12, 3), None, 'Deposit', 10000.0, 0.0)
+            tracker.add_transaction(datetime(2025, 8, 20, 12, 8), None, 'Deposit', 10000.0, 0.0)
         st.success("Tracker initialized with current prices and default cash.")
     else:
         st.warning("No price data available. Initialization skipped.")
     # Ensure initial cash and holdings are set
     if not tracker.cash_deposits:
-        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 12, 3), 'amount': 10000.0}]
+        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 12, 8), 'amount': 10000.0}]
         tracker.cash = 10000.0
         tracker.initial_cash = 10000.0
 
@@ -277,7 +277,7 @@ class PortfolioTracker:
             return pd.DataFrame()
         distribution = []
         leftover = cash
-        for ticker, alloc in self.target_allocations.items():
+        for i, (ticker, alloc) in enumerate(self.target_allocations.items()):
             if alloc > 0 and ticker in self.current_prices:
                 target_amount = (alloc / 100) * cash
                 price = self.current_prices[ticker]['price']
@@ -310,3 +310,17 @@ class PortfolioTracker:
         if price <= 20:
             return quantity * self.broker_fees['sst_low_price']
         return fee * self.broker_fees['sst_rate']
+
+    def get_cash_summary(self):
+        """Return a DataFrame summarizing cash transactions."""
+        cash_summary = []
+        for trans in self.transactions:
+            if trans['type'] in ['Deposit', 'Withdraw']:
+                cash_summary.append({
+                    'date': trans['date'],
+                    'type': trans['type'],
+                    'quantity': trans['total'],
+                    'price': trans['price'],
+                    'fee': trans['fee']
+                })
+        return pd.DataFrame(cash_summary) if cash_summary else pd.DataFrame()
