@@ -4,7 +4,7 @@ from datetime import datetime
 
 class UserManager:
     def __init__(self):
-        self.users = {"user1@example.com": "password123", "user2@example.com": "password456"}  # Sample user database
+        self.users = {"user1@example.com": "password123", "user2@example.com": "password456", "hamza": "123456"}  # Added hamza user
         if "logged_in_user" not in st.session_state:
             st.session_state.logged_in_user = None
         if "portfolios" not in st.session_state:
