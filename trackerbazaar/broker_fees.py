@@ -1,5 +1,5 @@
 import streamlit as st
-from .tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_broker_fees(tracker):
     st.header("Broker Fees")
