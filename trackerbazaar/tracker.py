@@ -11,17 +11,14 @@ def initialize_tracker(tracker):
         tracker.current_prices = prices
         # Set default target allocations (e.g., 0% for all tickers)
         tracker.target_allocations = {ticker: 0.0 for ticker in prices.keys()}
-        # Add a default cash deposit if no transactions exist
-        if not tracker.transactions:
-            tracker.add_transaction(datetime(2025, 8, 20, 12, 8), None, 'Deposit', 10000.0, 0.0)
-        st.success("Tracker initialized with current prices and default cash.")
+        st.success("Tracker initialized with current prices.")
     else:
         st.warning("No price data available. Initialization skipped.")
-    # Ensure initial cash and holdings are set
+    # Ensure initial cash and holdings are set to zero by default
     if not tracker.cash_deposits:
-        tracker.cash_deposits = [{'date': datetime(2025, 8, 20, 12, 8), 'amount': 10000.0}]
-        tracker.cash = 10000.0
-        tracker.initial_cash = 10000.0
+        tracker.cash_deposits = []
+        tracker.cash = 0.0
+        tracker.initial_cash = 0.0
 
 class PortfolioTracker:
     def __init__(self):
