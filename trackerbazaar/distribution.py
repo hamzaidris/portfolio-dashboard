@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from .tracker import PortfolioTracker
+from datetime import datetime
+from trackerbazaar.tracker import PortfolioTracker
 
 def render_distribution(tracker):
     st.header("Distribution Analysis")
@@ -99,7 +100,7 @@ def render_distribution(tracker):
 
     st.subheader("Sample Distribution")
     with st.form("distribute_cash_form"):
-        date = st.date_input("Date", value=datetime.now())
+        date = st.date_input("Date", value=datetime(2025, 8, 20, 11, 41))
         cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
         sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
         submit_calc = st.form_submit_button("Calculate Sample Distribution")
