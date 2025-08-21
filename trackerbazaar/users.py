@@ -12,15 +12,20 @@ class UserManager:
 
     def _init_db(self):
         """Initialize SQLite database with users table."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    email TEXT PRIMARY KEY,
-                    password_hash TEXT NOT NULL
-                )
-            """)
-            conn.commit()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        email TEXT PRIMARY KEY,
+                        password_hash TEXT NOT NULL
+                    )
+                """)
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            st.error(f"Failed to initialize database: {e}. Please check file permissions or contact support.")
+        except Exception as e:
+            st.error(f"Unexpected error initializing database: {e}. Please try again later.")
 
     def login(self):
         """Render login form and handle authentication."""
@@ -28,16 +33,24 @@ class UserManager:
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login", key="login_submit"):
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
-                result = cursor.fetchone()
-                if result and pbkdf2_sha256.verify(password, result[0]):
-                    st.session_state.logged_in_user = email
-                    st.success(f"Logged in as {email}")
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password")
+            if not email or not password:
+                st.error("Email and password cannot be empty.")
+                return
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
+                    result = cursor.fetchone()
+                    if result and pbkdf2_sha256.verify(password, result[0]):
+                        st.session_state.logged_in_user = email
+                        st.success(f"Logged in as {email}")
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password")
+            except sqlite3.OperationalError as e:
+                st.error(f"Database error during login: {e}. Please try again or contact support.")
+            except Exception as e:
+                st.error(f"Unexpected error during login: {e}. Please try again later.")
 
     def logout(self):
         """Render logout button in sidebar for logged-in users."""
@@ -63,18 +76,23 @@ class UserManager:
             if new_password != confirm_password:
                 st.error("Passwords do not match.")
                 return
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT email FROM users WHERE email = ?", (new_email,))
-                if cursor.fetchone():
-                    st.error("Email already registered. Please use a different email or log in.")
-                    return
-                password_hash = pbkdf2_sha256.hash(new_password)
-                cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (new_email, password_hash))
-                conn.commit()
-                st.session_state.logged_in_user = new_email
-                st.success(f"Account created for {new_email}. You are now logged in.")
-                st.rerun()
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT email FROM users WHERE email = ?", (new_email,))
+                    if cursor.fetchone():
+                        st.error("Email already registered. Please use a different email or log in.")
+                        return
+                    password_hash = pbkdf2_sha256.hash(new_password)
+                    cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (new_email, password_hash))
+                    conn.commit()
+                    st.session_state.logged_in_user = new_email
+                    st.success(f"Account created for {new_email}. You are now logged in.")
+                    st.rerun()
+            except sqlite3.OperationalError as e:
+                st.error(f"Database error during signup: {e}. Please try again or contact support.")
+            except Exception as e:
+                st.error(f"Unexpected error during signup: {e}. Please try again later.")
 
     def is_logged_in(self):
         """Check if a user is logged in."""
