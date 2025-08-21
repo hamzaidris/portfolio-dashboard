@@ -40,7 +40,7 @@ def main():
         return
 
     # Show logout button in sidebar for logged-in users
-    st.sidebar.header("Usera")
+    st.sidebar.header("User")
     user_manager.logout()
 
     # Initialize session state
