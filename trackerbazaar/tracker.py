@@ -1,55 +1,63 @@
-import json
+import datetime
+
 
 class Tracker:
-    def __init__(self, cash=0.0, transactions=None, dividends=None):
-        # Force safe defaults
-        self.cash = float(cash) if cash is not None else 0.0
-        self.transactions = list(transactions) if transactions is not None else []
-        self.dividends = list(dividends) if dividends is not None else []
+    def __init__(self):
+        self.transactions = []
+        self.dividends = []
+        self.cash_balance = 0.0
+        self.created_at = datetime.datetime.now().isoformat()
 
-    def add_transaction(self, transaction: dict):
-        """Add a transaction (must be JSON-serializable dict)."""
-        if isinstance(transaction, dict):
-            self.transactions.append(transaction)
-        else:
-            self.transactions.append({"value": str(transaction)})
+    def add_transaction(self, date, ticker, quantity, price, fees=0.0, tx_type="BUY"):
+        """Add a buy or sell transaction"""
+        tx = {
+            "date": date,
+            "ticker": ticker,
+            "quantity": quantity,
+            "price": price,
+            "fees": fees,
+            "type": tx_type.upper()
+        }
+        self.transactions.append(tx)
 
-    def add_dividend(self, dividend: dict):
-        """Add a dividend (must be JSON-serializable dict)."""
-        if isinstance(dividend, dict):
-            self.dividends.append(dividend)
-        else:
-            self.dividends.append({"value": str(dividend)})
+    def add_dividend(self, date, ticker, amount):
+        """Record a dividend payout"""
+        div = {
+            "date": date,
+            "ticker": ticker,
+            "amount": amount
+        }
+        self.dividends.append(div)
+
+    def add_cash(self, amount):
+        """Deposit or withdraw cash"""
+        self.cash_balance += amount
+
+    def portfolio_value(self, current_prices):
+        """Calculate total portfolio value from current prices"""
+        value = self.cash_balance
+        for tx in self.transactions:
+            ticker = tx["ticker"]
+            qty = tx["quantity"] if tx["type"] == "BUY" else -tx["quantity"]
+            price = current_prices.get(ticker, tx["price"])
+            value += qty * price
+        return value
 
     def to_dict(self):
-        """Convert tracker state into JSON-safe dict."""
+        """Convert Tracker to dictionary for saving"""
         return {
-            "cash": float(self.cash),
-            "transactions": self._ensure_json_safe(self.transactions),
-            "dividends": self._ensure_json_safe(self.dividends),
+            "transactions": self.transactions,
+            "dividends": self.dividends,
+            "cash_balance": self.cash_balance,
+            "created_at": self.created_at,
         }
 
     @classmethod
-    def from_dict(cls, data: dict):
-        """Recreate Tracker from dict (with safe defaults)."""
-        if not isinstance(data, dict):
-            return cls()
-        return cls(
-            cash=data.get("cash", 0.0),
-            transactions=data.get("transactions", []),
-            dividends=data.get("dividends", []),
-        )
-
-    def _ensure_json_safe(self, items):
-        """Ensure items are JSON serializable (convert non-serializable)."""
-        safe = []
-        for item in items:
-            try:
-                json.dumps(item)  # test
-                safe.append(item)
-            except Exception:
-                safe.append(str(item))  # fallback
-        return safe
-
-    def __repr__(self):
-        return f"<Tracker cash={self.cash} txns={len(self.transactions)} divs={len(self.dividends)}>"
+    def from_dict(cls, data):
+        """Rebuild Tracker from a saved dictionary"""
+        tracker = cls()
+        tracker.transactions = data.get("transactions", [])
+        tracker.dividends = data.get("dividends", [])
+        tracker.cash_balance = data.get("cash_balance", 0.0)
+        tracker.created_at = data.get("created_at", datetime.datetime.now().isoformat())
+        return tracker
