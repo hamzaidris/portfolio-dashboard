@@ -1,105 +1,118 @@
+import sys
+import os
 import streamlit as st
-from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.auth import create_user, login_user
+from trackerbazaar.dashboard import render_dashboard
+from trackerbazaar.portfolio import render_portfolio
+from trackerbazaar.distribution import render_distribution
+from trackerbazaar.cash import render_cash
+from trackerbazaar.stock_explorer import render_stock_explorer
+from trackerbazaar.notifications import render_notifications
+from trackerbazaar.transactions import render_transactions
+from trackerbazaar.current_prices import render_current_prices
+from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
+from trackerbazaar.add_dividend import render_add_dividend
+from trackerbazaar.broker_fees import render_broker_fees
+from trackerbazaar.guide import render_guide
+from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
+from trackerbazaar.users import UserManager
+from trackerbazaar.portfolios import PortfolioManager
+from datetime import datetime
 
-# ---------------------------
-# Initialize session state
-# ---------------------------
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "user_data" not in st.session_state:
-    st.session_state.user_data = None
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "page" not in st.session_state:
-    st.session_state.page = "login"  # default page
+# Add parent directory to sys.path for package resolution
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# ---------------------------
-# Render Register Page
-# ---------------------------
-def render_register():
-    st.header("Register")
-    with st.form("register_form"):
-        username = st.text_input("Username")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Register")
-        if submit:
-            if not username or not email or not password:
-                st.error("All fields are required.")
-            elif create_user(username, email, password):
-                st.success("Account created! Please login.")
-                st.session_state.page = "login"
-                st.rerun()
-            else:
-                st.error("Username or email already exists. Try again.")
+def main():
+    st.set_page_config(page_title="TrackerBazaar - Portfolio Dashboard", layout="wide")
+    st.title("📈 TrackerBazaar - Portfolio Dashboard")
+    st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics.")
 
-# ---------------------------
-# Render Login Page
-# ---------------------------
-def render_login():
-    st.header("Login")
-    with st.form("login_form"):
-        username_input = st.text_input("Username")
-        password_input = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-        if submit:
-            user_data = login_user(username_input, password_input)
-            if user_data:
-                st.session_state.authenticated = True
-                st.session_state.user_data = user_data
-                st.session_state.username = user_data["username"]
-                st.session_state.page = "dashboard"
-                st.rerun()
-            else:
-                st.error("Invalid username or password.")
+    user_manager = UserManager()
+    portfolio_manager = PortfolioManager()
 
-    st.write("Don't have an account?")
-    if st.button("Register here"):
-        st.session_state.page = "register"
-        st.rerun()
-
-# ---------------------------
-# Render Dashboard
-# ---------------------------
-def render_dashboard():
-    st.header("Portfolio Dashboard")
-
-    # Strict check for both authentication and username
-    if st.session_state.authenticated and st.session_state.username:
-        tracker = PortfolioTracker()  # REMOVED username parameter here
-        st.success(f"Welcome, {st.session_state.username}!")
-        st.write("Here will be portfolio stats, transactions, dividends, etc.")
-    else:
-        st.error("Session expired or user data is missing. Please log in again.")
-        st.session_state.authenticated = False
-        st.session_state.user_data = None
-        st.session_state.username = None
-        st.session_state.page = "login"
-        st.rerun()
+    # Handle login state
+    if not user_manager.is_logged_in():
+        tabs = st.tabs(["Login", "Sign Up"])
+        with tabs[0]:
+            user_manager.login()
+        with tabs[1]:
+            user_manager.signup()
+        st.info("Please log in or sign up to access your portfolios.")
         return
 
-    if st.button("Logout"):
-        st.session_state.authenticated = False
-        st.session_state.user_data = None
-        st.session_state.username = None
-        st.session_state.page = "login"
-        st.rerun()
+    # Show logout button in sidebar for logged-in users
+    st.sidebar.header("User")
+    user_manager.logout()
 
-# ---------------------------
-# Main App
-# ---------------------------
-def main():
-    if st.session_state.page == "register":
-        render_register()
-    elif st.session_state.page == "login":
-        render_login()
-    elif st.session_state.page == "dashboard":
-        if st.session_state.authenticated:
-            render_dashboard()
-        else:
-            st.session_state.page = "login"
+    # Initialize session state
+    if 'portfolios' not in st.session_state:
+        st.session_state.portfolios = {}
+    if 'selected_portfolio' not in st.session_state:
+        st.session_state.selected_portfolio = None
+
+    # Portfolio creation - FIXED: PortfolioTracker doesn't take username parameter
+    st.sidebar.header("Portfolio Management")
+    new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new_portfolio_name")
+    if st.sidebar.button("Create Portfolio", key="create_portfolio"):
+        tracker = PortfolioTracker()  # REMOVED username parameter
+        if tracker:
+            st.session_state.portfolios[new_portfolio_name] = tracker
+            st.session_state.selected_portfolio = new_portfolio_name
+            st.success(f"Portfolio '{new_portfolio_name}' created successfully!")
             st.rerun()
 
-if __name__ == "__main__":
+    # Portfolio selection
+    tracker = portfolio_manager.select_portfolio(user_manager.get_current_user())
+    if not tracker:
+        st.info("No portfolio selected. Create or select a portfolio.")
+        return
+
+    # Initialize tracker if not already initialized
+    if not tracker.current_prices:
+        initialize_tracker(tracker)
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
+
+    st.sidebar.header("Tax Settings")
+    filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
+    if filer_status != tracker.filer_status:
+        tracker.update_filer_status(filer_status)
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
+        st.session_state.data_changed = True
+
+    if st.session_state.get('data_changed', False):
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
+        st.session_state.data_changed = False
+        st.rerun()
+
+    # Navigation
+    st.sidebar.header("Navigation")
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide"])
+
+    # Call the appropriate tab function
+    if page == "Dashboard":
+        render_dashboard(tracker)
+    elif page == "Portfolio":
+        render_portfolio(tracker)
+    elif page == "Distribution":
+        render_distribution(tracker)
+    elif page == "Cash":
+        render_cash(tracker)
+    elif page == "Stock Explorer":
+        render_stock_explorer(tracker)
+    elif page == "Notifications":
+        render_notifications(tracker)
+    elif page == "Transactions":
+        render_transactions(tracker)
+    elif page == "Current Prices":
+        render_current_prices(tracker)
+    elif page == "Add Transaction":
+        render_add_transaction(tracker)
+        render_sample_distribution(tracker)
+    elif page == "Add Dividend":
+        render_add_dividend(tracker)
+    elif page == "Broker Fees":
+        render_broker_fees(tracker)
+    elif page == "Guide":
+        render_guide()
+
+if __name__ == '__main__':
     main()
