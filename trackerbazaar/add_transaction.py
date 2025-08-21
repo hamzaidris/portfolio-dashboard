@@ -84,4 +84,3 @@ def render_sample_distribution(tracker):
                     temp_tracker.current_prices = tracker.current_prices
                     dist_df = temp_tracker.calculate_distribution(cash)
                     st.session_state.dist_df = dist_df
-                    st
