@@ -1,2 +1,7 @@
-# TrackerBazaar package (fixed baseline)
-__version__ = "0.1.0"
+# trackerbazaar/__init__.py
+
+from .tracker import PortfolioTracker
+from .portfolios import PortfolioManager
+
+# Optional: make sure Streamlit sees the package cleanly
+__all__ = ["PortfolioTracker", "PortfolioManager"]
