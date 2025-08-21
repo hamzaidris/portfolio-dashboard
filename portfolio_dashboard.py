@@ -8,15 +8,14 @@ portfolio_manager = PortfolioManager()
 def main():
     st.set_page_config(page_title="TrackerBazaar", layout="wide")
 
-    # Sidebar greeting
-    if st.session_state.get("logged_in_user"):
+    current_user = st.session_state.get("logged_in_user")
+
+    # Sidebar
+    if current_user:
         st.sidebar.write(f"Welcome, {st.session_state.get('logged_in_username', '')} 👋")
-        current_user = st.session_state.logged_in_user
     else:
         st.sidebar.write("Please log in")
-        current_user = None
 
-    # Tabs
     tab1, tab2, tab3 = st.tabs(["Login / Signup", "Portfolios", "Dashboard"])
 
     with tab1:
@@ -26,7 +25,8 @@ def main():
     with tab2:
         if current_user:
             st.subheader("Your Portfolios")
-            portfolios = portfolio_manager.list_portfolios(current_user)
+            # ✅ Only call if not None
+            portfolios = portfolio_manager.list_portfolios(current_user) if current_user else []
             if portfolios:
                 st.write("Available Portfolios:", portfolios)
             else:
