@@ -1,51 +1,41 @@
+# trackerbazaar/add_transaction.py
+
 import streamlit as st
 from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
 
 
-def show_add_transaction_ui(current_user):
-    st.title("📝 Add Transaction")
+def add_transaction_ui():
+    """Streamlit UI for adding a transaction."""
+    st.header("➕ Add Transaction")
 
-    if not current_user:
-        st.warning("Please log in to add transactions.")
-        return
+    portfolio_manager = PortfolioManager()
 
-    pm = PortfolioManager()
-    portfolios = pm.list_portfolios(current_user)
+    with st.form("add_transaction_form"):
+        email = st.session_state.get("logged_in_user")
+        if not email:
+            st.error("⚠️ Please log in first.")
+            return
 
-    if not portfolios:
-        st.info("No portfolios found. Please create one first.")
-        return
+        portfolio_list = portfolio_manager.list_portfolios(email)
+        if not portfolio_list:
+            st.warning("You don’t have any portfolios yet. Create one first.")
+            return
 
-    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
-
-    tracker = pm.load_portfolio(selected_portfolio, current_user)
-    if not tracker:
-        st.error("Failed to load portfolio.")
-        return
-
-    # ---- Transaction Form ----
-    st.markdown("### New Transaction")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        ticker = st.text_input("Stock Symbol (e.g., LUCK, HBL, OGDC)").upper()
+        portfolio_id = st.selectbox("Select Portfolio", [p[0] for p in portfolio_list])
+        date = st.date_input("Date")
+        ticker = st.text_input("Ticker Symbol")
+        transaction_type = st.selectbox("Transaction Type", ["Buy", "Sell"])
         quantity = st.number_input("Quantity", min_value=1, step=1)
-        price = st.number_input("Price per Share (PKR)", min_value=0.0, step=1.0)
+        price = st.number_input("Price per Share", min_value=0.0, step=0.01)
+        brokerage = st.number_input("Brokerage Fee", min_value=0.0, step=0.01)
 
-    with col2:
-        txn_type = st.radio("Transaction Type", ["Buy", "Sell"], horizontal=True)
-        brokerage = st.number_input("Brokerage Fee (PKR)", min_value=0.0, step=10.0)
+        submitted = st.form_submit_button("Add Transaction")
 
-    if st.button("💾 Save Transaction"):
-        try:
-            if txn_type == "Buy":
-                tracker.buy_stock(ticker, quantity, price, brokerage)
-            else:
-                tracker.sell_stock(ticker, quantity, price, brokerage)
-
-            pm.save_portfolio(selected_portfolio, current_user, tracker)
-            st.success(f"{txn_type} transaction saved for {ticker}")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Failed to save transaction: {e}")
+        if submitted:
+            try:
+                portfolio_manager.add_transaction(
+                    portfolio_id, str(date), ticker, transaction_type, quantity, price, brokerage
+                )
+                st.success("✅ Transaction added successfully!")
+            except Exception as e:
+                st.error(f"❌ Failed to add transaction: {e}")
