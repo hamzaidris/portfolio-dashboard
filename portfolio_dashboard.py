@@ -42,13 +42,13 @@ def render_login():
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
-        submit = st.form_form_submit_button("Login")
+        submit = st.form_submit_button("Login")
         if submit:
             user_data = login_user(username, password)
             if user_data:
                 st.session_state.authenticated = True
                 st.session_state.user_data = user_data
-                st.session_state.username = username  # Store username directly
+                st.session_state.username = username
                 st.session_state.page = "dashboard"
                 st.rerun()
             else:
@@ -65,7 +65,6 @@ def render_login():
 def render_dashboard():
     st.header("Portfolio Dashboard")
 
-    # Use the username stored directly in the session state
     if st.session_state.username:
         tracker = PortfolioTracker(st.session_state.username)
     else:
@@ -77,7 +76,6 @@ def render_dashboard():
 
     st.success(f"Welcome, {st.session_state.username}!")
 
-    # Example features (add your own pages here)
     st.write("Here will be portfolio stats, transactions, dividends, etc.")
 
     if st.button("Logout"):
@@ -103,4 +101,3 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main()
