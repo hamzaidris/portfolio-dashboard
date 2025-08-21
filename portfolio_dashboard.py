@@ -9,6 +9,8 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "user_data" not in st.session_state:
     st.session_state.user_data = None
+if "username" not in st.session_state:
+    st.session_state.username = None
 if "page" not in st.session_state:
     st.session_state.page = "login"  # default page
 
@@ -44,10 +46,9 @@ def render_login():
         if submit:
             user_data = login_user(username, password)
             if user_data:
-                # Add the 'username' key to the user_data dictionary
-                user_data["username"] = username
                 st.session_state.authenticated = True
                 st.session_state.user_data = user_data
+                st.session_state.username = username  # Store username directly
                 st.session_state.page = "dashboard"
                 st.rerun()
             else:
@@ -64,9 +65,9 @@ def render_login():
 def render_dashboard():
     st.header("Portfolio Dashboard")
 
-    # ✅ Ensure user_data exists before creating tracker
-    if st.session_state.user_data and "username" in st.session_state.user_data:
-        tracker = PortfolioTracker(st.session_state.user_data["username"])
+    # Use the username stored directly in the session state
+    if st.session_state.username:
+        tracker = PortfolioTracker(st.session_state.username)
     else:
         st.error("No user data found. Please log in again.")
         st.session_state.authenticated = False
@@ -74,7 +75,7 @@ def render_dashboard():
         st.rerun()
         return
 
-    st.success(f"Welcome, {st.session_state.user_data['username']}!")
+    st.success(f"Welcome, {st.session_state.username}!")
 
     # Example features (add your own pages here)
     st.write("Here will be portfolio stats, transactions, dividends, etc.")
@@ -82,6 +83,7 @@ def render_dashboard():
     if st.button("Logout"):
         st.session_state.authenticated = False
         st.session_state.user_data = None
+        st.session_state.username = None
         st.session_state.page = "login"
         st.rerun()
 
