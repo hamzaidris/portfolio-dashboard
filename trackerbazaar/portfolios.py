@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, date
 from trackerbazaar.tracker import PortfolioTracker
 
 class PortfolioManager:
@@ -128,7 +128,7 @@ class PortfolioManager:
         """Serialize PortfolioTracker data to JSON, converting datetime to strings."""
         return json.dumps({
             'transactions': [
-                {**t, 'date': t['date'].isoformat() if isinstance(t['date'], (datetime, date)) else t['date']}
+                {**t, 'date': t['date'].isoformat() if isinstance(t['date'], (datetime.datetime, datetime.date)) else t['date']}
                 for t in tracker.transactions
             ],
             'holdings': tracker.holdings,
@@ -141,11 +141,11 @@ class PortfolioManager:
             'target_investment': tracker.target_investment,
             'last_div_per_share': tracker.last_div_per_share,
             'cash_deposits': [
-                {**d, 'date': d['date'].isoformat() if isinstance(d['date'], (datetime, date)) else d['date']}
+                {**d, 'date': d['date'].isoformat() if isinstance(d['date'], (datetime.datetime, datetime.date)) else d['date']}
                 for d in tracker.cash_deposits
             ],
             'alerts': [
-                {**a, 'date': a['date'].isoformat() if isinstance(a['date'], (datetime, date)) else a['date']}
+                {**a, 'date': a['date'].isoformat() if isinstance(a['date'], (datetime.datetime, datetime.date)) else a['date']}
                 for a in tracker.alerts
             ],
             'filer_status': tracker.filer_status,
