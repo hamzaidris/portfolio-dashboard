@@ -6,7 +6,7 @@ from trackerbazaar.add_transaction import render_add_transaction, render_sample_
 from trackerbazaar.add_dividend import render_add_dividend  # Placeholder
 from trackerbazaar.broker_fees import render_broker_fees  # Placeholder
 from trackerbazaar.cash import render_cash
-from trackerbazaar.current_prices import update_current_prices  # Utility, not a page
+# Removed import of current_prices
 from trackerbazaar.dashboard import render_dashboard
 from trackerbazaar.data import render_data  # Placeholder
 from trackerbazaar.distribution import render_distribution
@@ -77,7 +77,7 @@ def main():
         st.stop()
 
     initialize_tracker(tracker)
-    update_current_prices(tracker)  # Call utility function to update prices
+    # Removed call to update_current_prices(tracker)
 
     pages = {
         "Portfolio": render_portfolio,
