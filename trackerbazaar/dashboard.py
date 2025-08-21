@@ -1,6 +1,6 @@
 # trackerbazaar/dashboard.py
 import streamlit as st
-from trackerbazaar.portfolio_tracker import PortfolioTracker
+from trackerbazaar.tracker import PortfolioTracker   # ✅ fixed import
 
 def run():
     st.title("📊 Portfolio Dashboard")
@@ -18,13 +18,14 @@ def run():
         st.subheader(f"Portfolio: {name}")
 
         try:
-            # Fetch portfolio summary (you may need to extend PortfolioTracker with this)
+            # Fetch portfolio summary (requires PortfolioTracker.get_portfolio_summary)
             summary = tracker.get_portfolio_summary(pid)
 
             # Display summary in a nice layout
-            st.metric("Total Invested", f"{summary['invested']:,} PKR")
-            st.metric("Current Value", f"{summary['current_value']:,} PKR")
-            st.metric("Profit / Loss", f"{summary['pnl']:,} PKR")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Invested", f"{summary['invested']:,} PKR")
+            col2.metric("Current Value", f"{summary['current_value']:,} PKR")
+            col3.metric("Profit / Loss", f"{summary['pnl']:,} PKR")
 
             st.write("### Holdings")
             st.dataframe(summary["holdings"])
