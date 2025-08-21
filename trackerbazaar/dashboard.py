@@ -6,7 +6,7 @@ from trackerbazaar.portfolios import PortfolioManager
 portfolio_manager = PortfolioManager()
 
 def show_dashboard(selected_portfolio: str, user_email: str):
-    """Modern portfolio dashboard with KPIs and charts."""
+    """Modern Portfolio Dashboard"""
 
     try:
         tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
@@ -14,63 +14,63 @@ def show_dashboard(selected_portfolio: str, user_email: str):
         st.error(f"Error loading portfolio: {e}")
         return
 
-    st.subheader(f"📊 Portfolio Dashboard — {selected_portfolio}")
+    st.title("📊 Portfolio Dashboard")
 
-    if not tracker.holdings:
-        st.info("No holdings yet. Add transactions to see your dashboard.")
-        return
+    # ---- Portfolio KPIs ----
+    st.subheader(f"Overview — {selected_portfolio}")
 
-    # ---- KPIs ----
     total_invested = tracker.get_total_invested()
     current_value = tracker.get_current_value()
-    profit_loss = current_value - total_invested
-    cagr = tracker.calculate_cagr()
+    total_profit_loss = current_value - total_invested
+    profit_loss_pct = (total_profit_loss / total_invested * 100) if total_invested > 0 else 0
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("💸 Total Invested", f"PKR {total_invested:,.0f}")
-    col2.metric("📈 Current Value", f"PKR {current_value:,.0f}")
-    col3.metric("💹 P/L", f"PKR {profit_loss:,.0f}", 
-                delta=f"{(profit_loss/total_invested*100):.2f}%")
-    col4.metric("📊 CAGR", f"{cagr:.2f}%")
+    col1.metric("💰 Invested", f"{total_invested:,.2f} PKR")
+    col2.metric("📈 Current Value", f"{current_value:,.2f} PKR")
+    col3.metric(
+        "📊 P/L",
+        f"{total_profit_loss:,.2f} PKR",
+        delta=f"{profit_loss_pct:.2f}%" if total_invested > 0 else None,
+    )
+    col4.metric("📦 Holdings", f"{len(tracker.holdings)} stocks")
 
     st.divider()
 
     # ---- Holdings Table ----
-    st.subheader("📑 Current Holdings")
-    df = pd.DataFrame(tracker.holdings)
-    st.dataframe(df, use_container_width=True)
+    st.subheader("📑 Holdings")
 
-    # ---- Charts ----
-    col1, col2 = st.columns(2)
+    if tracker.holdings:
+        holdings_df = pd.DataFrame(tracker.holdings).rename(columns={
+            "symbol": "Symbol",
+            "shares": "Shares",
+            "avg_price": "Avg. Price",
+            "current_price": "Current Price",
+            "value": "Value",
+            "profit_loss": "P/L"
+        })
 
-    with col1:
-        st.subheader("Allocation by Stock")
-        alloc = df.groupby("stock")["current_value"].sum().reset_index()
-        st.bar_chart(alloc.set_index("stock"))
+        holdings_df["P/L %"] = (
+            (holdings_df["Current Price"] - holdings_df["Avg. Price"]) / holdings_df["Avg. Price"] * 100
+        ).round(2)
 
-    with col2:
-        st.subheader("Profit/Loss by Stock")
-        pl = df.groupby("stock")["profit_loss"].sum().reset_index()
-        st.bar_chart(pl.set_index("stock"))
+        st.dataframe(holdings_df, use_container_width=True)
 
-    # ---- Expandable Sections ----
-    with st.expander("📥 Transactions"):
-        if tracker.transactions:
-            tx_df = pd.DataFrame(tracker.transactions)
-            st.dataframe(tx_df, use_container_width=True)
-        else:
-            st.info("No transactions yet.")
+        # ---- Charts ----
+        st.subheader("📊 Portfolio Distribution")
 
-    with st.expander("💰 Dividends"):
-        if tracker.dividends:
-            div_df = pd.DataFrame(tracker.dividends)
-            st.dataframe(div_df, use_container_width=True)
-        else:
-            st.info("No dividends yet.")
+        col1, col2 = st.columns(2)
 
-    with st.expander("🏦 Cash Ledger"):
-        if tracker.cash_ledger:
-            cash_df = pd.DataFrame(tracker.cash_ledger)
-            st.dataframe(cash_df, use_container_width=True)
-        else:
-            st.info("No cash transactions recorded.")
+        with col1:
+            st.write("### Allocation by Value")
+            st.bar_chart(
+                holdings_df.set_index("Symbol")["Value"]
+            )
+
+        with col2:
+            st.write("### Profit/Loss by Stock")
+            st.bar_chart(
+                holdings_df.set_index("Symbol")["P/L"]
+            )
+
+    else:
+        st.info("No holdings yet. Add transactions to build your portfolio.")
