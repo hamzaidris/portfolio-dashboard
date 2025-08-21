@@ -65,18 +65,19 @@ def render_login():
 def render_dashboard():
     st.header("Portfolio Dashboard")
 
-    if st.session_state.username:
+    # Strict check for both authentication and username
+    if st.session_state.authenticated and st.session_state.username:
         tracker = PortfolioTracker(st.session_state.username)
+        st.success(f"Welcome, {st.session_state.username}!")
+        st.write("Here will be portfolio stats, transactions, dividends, etc.")
     else:
-        st.error("No user data found. Please log in again.")
+        st.error("Session expired or user data is missing. Please log in again.")
         st.session_state.authenticated = False
+        st.session_state.user_data = None
+        st.session_state.username = None
         st.session_state.page = "login"
         st.rerun()
         return
-
-    st.success(f"Welcome, {st.session_state.username}!")
-
-    st.write("Here will be portfolio stats, transactions, dividends, etc.")
 
     if st.button("Logout"):
         st.session_state.authenticated = False
