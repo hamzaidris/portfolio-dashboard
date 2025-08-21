@@ -1,7 +1,12 @@
 import streamlit as st
 from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.portfolios import PortfolioManager
 
 def render_broker_fees(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.header("Broker Fees")
     st.write("Define your broker fees for distribution calculations.")
     with st.form("broker_fees_form"):
@@ -17,5 +22,6 @@ def render_broker_fees(tracker):
                 'brokerage_rate': brokerage_rate,
                 'sst_rate': sst_rate
             }
+            portfolio_manager.save_portfolio(portfolio_name, email, tracker)
             st.session_state.data_changed = True
             st.success("Broker fees updated successfully!")
