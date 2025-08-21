@@ -10,6 +10,8 @@ class UserManager:
         self._init_db()
         if "logged_in_user" not in st.session_state:
             st.session_state.logged_in_user = None
+        if "logged_in_username" not in st.session_state:
+            st.session_state.logged_in_username = None
 
     def _init_db(self):
         """Ensure the users table exists."""
@@ -62,7 +64,9 @@ class UserManager:
                 row = c.fetchone()
 
             if row and pbkdf2_sha256.verify(password, row[0]):
+                # store both keys for compatibility
                 st.session_state.logged_in_user = email
+                st.session_state.logged_in_username = email
                 st.success(f"Welcome, {email}!")
                 st.rerun()
             else:
@@ -71,6 +75,7 @@ class UserManager:
     def logout(self):
         if st.button("Logout"):
             st.session_state.logged_in_user = None
+            st.session_state.logged_in_username = None
             st.success("Logged out successfully.")
             st.rerun()
 
