@@ -24,10 +24,10 @@ class UserManager:
 
     def login(self):
         """Render login form and handle authentication."""
-        st.sidebar.header("User Login")
-        email = st.sidebar.text_input("Email", key="login_email")
-        password = st.sidebar.text_input("Password", type="password", key="login_password")
-        if st.sidebar.button("Login", key="login_submit"):
+        st.header("Login")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login", key="login_submit"):
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
@@ -37,10 +37,14 @@ class UserManager:
                     st.success(f"Logged in as {email}")
                     st.rerun()
                 else:
-                    st.sidebar.error("Invalid email or password")
-        if st.sidebar.button("Logout", key="logout_submit") and st.session_state.logged_in_user:
+                    st.error("Invalid email or password")
+
+    def logout(self):
+        """Render logout button in sidebar for logged-in users."""
+        if st.sidebar.button("Logout", key="logout_submit"):
             st.session_state.logged_in_user = None
             st.session_state.portfolios = {}
+            st.session_state.selected_portfolio = None
             st.success("Logged out successfully")
             st.rerun()
 
