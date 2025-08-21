@@ -1,77 +1,62 @@
 import streamlit as st
 
-from trackerbazaar import (
-    add_transaction,
-    add_dividend,
-    broker_fees,
-    cash,
-    current_prices,
-    dashboard,
-    data,
-    distribution,
-    guide,
-    notifications,
-    portfolio,
-    portfolios,
-    stock_explorer,
-    transactions,
-    users,
-)
+# Import from our package
+try:
+    from trackerbazaar import (
+        PortfolioManager,
+        PortfolioTracker,
+        init_db
+    )
+except Exception as e:
+    st.error(f"⚠️ Failed to import core modules: {e}")
+    st.stop()
 
-from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.users import UserManager
+# ✅ Always initialize DB on startup
+try:
+    init_db()
+except Exception as e:
+    st.error(f"⚠️ Database initialization failed: {e}")
+    st.stop()
 
 
-def main():
-    st.set_page_config(page_title="TrackerBazaar", layout="wide")
-    st.title("📊 TrackerBazaar — Portfolio Dashboard")
+# --------------------------
+# Streamlit App UI
+# --------------------------
 
-    user_manager = UserManager()
-    portfolio_manager = PortfolioManager()
+st.set_page_config(page_title="TrackerBazaar", layout="wide")
 
-    if not user_manager.get_current_user():
-        st.info("Please login or sign up to continue.")
-        user_manager.login_signup_panel()
-        return
+st.title("📊 TrackerBazaar")
 
-    current_user = user_manager.get_current_user()
+tab1, tab2, tab3 = st.tabs(["Trade Manager", "Dashboard", "FIRE Tracker"])
 
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
-    pages = {
-        "Dashboard": dashboard,
-        "Transactions": transactions,
-        "Dividends": add_dividend,
-        "Add Transaction": add_transaction,
-        "Cash Management": cash,
-        "Stock Explorer": stock_explorer,
-        "Portfolio": portfolio,
-        "Broker Fees": broker_fees,
-        "Distribution": distribution,
-        "Guide": guide,
-        "Notifications": notifications,
-    }
-    choice = st.sidebar.radio("Go to", list(pages.keys()))
-
-    # Portfolios section
-    st.sidebar.subheader("Your Portfolios")
+# Trade Manager
+with tab1:
+    st.subheader("💼 Manage Your Trades")
     try:
-        portfolios_list = portfolio_manager.list_portfolios(current_user)
-        if portfolios_list:
-            for p in portfolios_list:
-                st.sidebar.write(f"📂 {p}")
+        pm = PortfolioManager()
+        portfolios = pm.list_portfolios()
+        if not portfolios:
+            st.info("No portfolios yet. Please create one.")
         else:
-            st.sidebar.write("No portfolios yet.")
+            for p in portfolios:
+                st.write(f"- {p[1]} (Owner: {p[2]})")
     except Exception as e:
-        st.sidebar.error(f"Error loading portfolios: {e}")
+        st.error(f"⚠️ Error loading portfolios: {e}")
 
-    # Page rendering
-    page = pages[choice]
-    if hasattr(page, "app"):
-        page.app()
-    else:
-        st.warning("This section is under construction.")
+# Dashboard
+with tab2:
+    st.subheader("📈 Portfolio Dashboard")
+    try:
+        pt = PortfolioTracker()
+        summary = pt.get_summary()
+        if not summary:
+            st.info("No data available yet.")
+        else:
+            st.write(summary)
+    except Exception as e:
+        st.error(f"⚠️ Error loading dashboard: {e}")
 
-
-if __name__ == "__main__":
-    main()
+# FIRE Tracker
+with tab3:
+    st.subheader("🔥 Financial Independence Tracker")
+    st.info("FIRE goals and progress will appear here soon.")
