@@ -52,4 +52,9 @@ def show():
         if submitted and name and owner_email:
             add_portfolio(name, owner_email)
             st.success(f"Portfolio '{name}' added!")
-            st.experimental_rerun()
+
+            # ✅ Compatible rerun
+            try:
+                st.rerun()  # New versions
+            except Exception:
+                st.experimental_rerun()  # Older versions
