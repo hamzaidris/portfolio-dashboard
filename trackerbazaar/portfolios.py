@@ -2,6 +2,9 @@ import sqlite3
 import logging
 import json
 
+# Import tracker types to allow optional creation/initialization
+from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -98,6 +101,18 @@ class PortfolioManager:
             logger.error(f"Database error listing portfolios: {e}")
             return []
 
-    def create_portfolio(self, portfolio_name, user_email, tracker):
-        """Create a new portfolio (delegates to save)."""
+    def create_portfolio(self, portfolio_name, user_email, tracker=None):
+        """
+        Create a new portfolio for the user.
+        If tracker is not provided, create and initialize a fresh PortfolioTracker.
+        This keeps compatibility with 2-arg call sites.
+        """
+        if tracker is None:
+            tracker = PortfolioTracker()
+            try:
+                initialize_tracker(tracker)
+            except Exception:
+                # Ensure the object remains usable even if initialization fails
+                pass
+
         return self.save_portfolio(portfolio_name, user_email, tracker)
