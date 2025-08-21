@@ -1,63 +1,61 @@
-import datetime
-
+import json
+from datetime import datetime
 
 class Tracker:
     def __init__(self):
+        # Stores transactions, dividends, and cash movements
         self.transactions = []
         self.dividends = []
-        self.cash_balance = 0.0
-        self.created_at = datetime.datetime.now().isoformat()
+        self.cash_movements = []
+        self.created_at = datetime.utcnow().isoformat()
 
-    def add_transaction(self, date, ticker, quantity, price, fees=0.0, tx_type="BUY"):
-        """Add a buy or sell transaction"""
-        tx = {
-            "date": date,
+    def add_transaction(self, ticker, quantity, price, date=None):
+        if not date:
+            date = datetime.utcnow().isoformat()
+        self.transactions.append({
             "ticker": ticker,
             "quantity": quantity,
             "price": price,
-            "fees": fees,
-            "type": tx_type.upper()
-        }
-        self.transactions.append(tx)
+            "date": date
+        })
 
-    def add_dividend(self, date, ticker, amount):
-        """Record a dividend payout"""
-        div = {
-            "date": date,
+    def add_dividend(self, ticker, amount, date=None):
+        if not date:
+            date = datetime.utcnow().isoformat()
+        self.dividends.append({
             "ticker": ticker,
-            "amount": amount
-        }
-        self.dividends.append(div)
+            "amount": amount,
+            "date": date
+        })
 
-    def add_cash(self, amount):
-        """Deposit or withdraw cash"""
-        self.cash_balance += amount
-
-    def portfolio_value(self, current_prices):
-        """Calculate total portfolio value from current prices"""
-        value = self.cash_balance
-        for tx in self.transactions:
-            ticker = tx["ticker"]
-            qty = tx["quantity"] if tx["type"] == "BUY" else -tx["quantity"]
-            price = current_prices.get(ticker, tx["price"])
-            value += qty * price
-        return value
+    def add_cash(self, amount, reason="Deposit", date=None):
+        if not date:
+            date = datetime.utcnow().isoformat()
+        self.cash_movements.append({
+            "amount": amount,
+            "reason": reason,
+            "date": date
+        })
 
     def to_dict(self):
-        """Convert Tracker to dictionary for saving"""
+        """
+        Convert tracker state into a JSON-safe dict
+        """
         return {
             "transactions": self.transactions,
             "dividends": self.dividends,
-            "cash_balance": self.cash_balance,
-            "created_at": self.created_at,
+            "cash_movements": self.cash_movements,
+            "created_at": self.created_at
         }
 
     @classmethod
     def from_dict(cls, data):
-        """Rebuild Tracker from a saved dictionary"""
+        """
+        Rebuild tracker object from dict (loaded from DB JSON)
+        """
         tracker = cls()
         tracker.transactions = data.get("transactions", [])
         tracker.dividends = data.get("dividends", [])
-        tracker.cash_balance = data.get("cash_balance", 0.0)
-        tracker.created_at = data.get("created_at", datetime.datetime.now().isoformat())
+        tracker.cash_movements = data.get("cash_movements", [])
+        tracker.created_at = data.get("created_at", datetime.utcnow().isoformat())
         return tracker
