@@ -1,8 +1,8 @@
 import streamlit as st
-import json
 from trackerbazaar.users import UserManager
 from trackerbazaar.portfolios import PortfolioManager
 from trackerbazaar.tracker import Tracker
+from trackerbazaar import trade_manager, dividends, cash, dashboard, fire_tracker
 
 def main():
     st.set_page_config(page_title="TrackerBazaar", layout="wide")
@@ -15,8 +15,10 @@ def main():
 
     if not current_user:
         tab1, tab2 = st.tabs(["Login", "Signup"])
-        with tab1: user_manager.login()
-        with tab2: user_manager.signup()
+        with tab1: 
+            user_manager.login()
+        with tab2: 
+            user_manager.signup()
         return
 
     # Sidebar
@@ -63,24 +65,19 @@ def main():
     )
 
     with tab1:
-        st.write("📑 Trade Manager")
-        # render trade manager module here
+        trade_manager.view_trade_manager(tracker, portfolio_manager, portfolio_name, current_user)
 
     with tab2:
-        st.write("💰 Dividends")
-        # render dividends module here
+        dividends.view_dividends(tracker, portfolio_manager, portfolio_name, current_user)
 
     with tab3:
-        st.write("🏦 Cash Movements")
-        # render cash deposit/withdrawal entries
+        cash.view_cash(tracker, portfolio_manager, portfolio_name, current_user)
 
     with tab4:
-        st.write("📊 Portfolio Dashboard")
-        # charts + performance summary
+        dashboard.view_dashboard(tracker)
 
     with tab5:
-        st.write("🔥 FIRE Tracker")
-        # financial independence goals
+        fire_tracker.view_fire_tracker(tracker, portfolio_manager, portfolio_name, current_user)
 
 if __name__ == "__main__":
     main()
