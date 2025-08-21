@@ -43,7 +43,7 @@ class PortfolioTracker:
         """Add a transaction to the portfolio."""
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
-        if not isinstance(date, (datetime.datetime, datetime.date)):
+        if not isinstance(date, (datetime, date)):
             raise ValueError("Invalid date format")
         if trans_type not in ["Buy", "Sell", "Deposit", "Withdraw"]:
             raise ValueError("Invalid transaction type")
