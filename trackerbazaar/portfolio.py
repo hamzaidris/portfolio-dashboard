@@ -1,78 +1,38 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.current_prices import get_current_price
+# trackerbazaar/portfolio.py
 
+from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.current_prices import CurrentPrices   # ✅ use class, not function
 
-def show_portfolio_ui(current_user):
-    st.title("📊 Portfolio Overview")
+class Portfolio:
+    def __init__(self, name):
+        self.name = name
+        self.tracker = PortfolioTracker()
+        self.price_service = CurrentPrices()   # ✅ instantiate
 
-    if not current_user:
-        st.warning("Please log in to view your portfolio.")
-        return
+    def get_summary(self):
+        holdings = self.tracker.get_holdings(self.name)
+        summary = {"holdings": [], "total_value": 0}
 
-    pm = PortfolioManager()
-    portfolios = pm.list_portfolios(current_user)
+        for holding in holdings:
+            ticker = holding["ticker"]
+            qty = holding["quantity"]
+            avg_price = holding["avg_price"]
 
-    if not portfolios:
-        st.info("No portfolios found. Please create one first.")
-        return
+            # ✅ fetch current price from class method
+            current_price = self.price_service.get_price(ticker)
 
-    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
+            value = qty * current_price
+            profit_loss = (current_price - avg_price) * qty
 
-    tracker = pm.load_portfolio(selected_portfolio, current_user)
-    if not tracker:
-        st.error("Failed to load portfolio.")
-        return
+            summary["holdings"].append({
+                "ticker": ticker,
+                "quantity": qty,
+                "avg_price": avg_price,
+                "current_price": current_price,
+                "value": value,
+                "profit_loss": profit_loss,
+            })
 
-    holdings = tracker.get_holdings()
-    if not holdings:
-        st.info("No holdings in this portfolio.")
-        return
+            summary["total_value"] += value
 
-    # ---- Convert holdings to DataFrame ----
-    data = []
-    for ticker, info in holdings.items():
-        avg_price = info["avg_price"]
-        quantity = info["quantity"]
-        invested = avg_price * quantity
-        current_price = get_current_price(ticker) or avg_price  # fallback
-        market_value = current_price * quantity
-        pl = market_value - invested
-
-        data.append({
-            "Ticker": ticker,
-            "Quantity": quantity,
-            "Avg Buy Price": avg_price,
-            "Invested (PKR)": invested,
-            "Current Price": current_price,
-            "Market Value (PKR)": market_value,
-            "Profit/Loss (PKR)": pl
-        })
-
-    df = pd.DataFrame(data)
-
-    # ---- Display portfolio table ----
-    st.markdown("### Holdings")
-    st.dataframe(df, use_container_width=True)
-
-    # ---- Portfolio totals ----
-    total_invested = df["Invested (PKR)"].sum()
-    total_value = df["Market Value (PKR)"].sum()
-    total_pl = df["Profit/Loss (PKR)"].sum()
-
-    st.metric("💰 Total Invested", f"{total_invested:,.2f} PKR")
-    st.metric("📈 Market Value", f"{total_value:,.2f} PKR")
-    st.metric("📊 Total Profit/Loss", f"{total_pl:,.2f} PKR")
-
-    # ---- Chart ----
-    fig = px.bar(
-        df,
-        x="Ticker",
-        y="Profit/Loss (PKR)",
-        color="Profit/Loss (PKR)",
-        title="Profit/Loss by Stock",
-        text_auto=True
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        return summary
