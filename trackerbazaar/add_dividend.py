@@ -1,8 +1,13 @@
 import streamlit as st
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.portfolios import PortfolioManager
 
 def render_add_dividend(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.header("Add Dividend")
     with st.form("dividend_form"):
         ticker_options = sorted(tracker.current_prices.keys())
@@ -16,6 +21,7 @@ def render_add_dividend(tracker):
             else:
                 try:
                     tracker.add_dividend(ticker, amount)
+                    portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                     st.session_state.data_changed = True
                     st.success("Dividend added successfully!")
                     st.rerun()
