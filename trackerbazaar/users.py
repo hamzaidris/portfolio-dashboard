@@ -2,6 +2,11 @@ import streamlit as st
 import sqlite3
 from passlib.hash import pbkdf2_sha256
 from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class UserManager:
     def __init__(self):
@@ -18,22 +23,38 @@ class UserManager:
                 # Check if table exists and has the correct columns
                 cursor.execute("PRAGMA table_info(users)")
                 columns = {row[1] for row in cursor.fetchall()}
-                if "users" not in columns and "password_hash" not in columns:
+                logger.info(f"Existing columns in users table: {columns}")
+                if not columns or "password_hash" not in columns:
+                    logger.info("Recreating users table due to missing password_hash column.")
+                    # Backup existing data if table exists
+                    if columns:
+                        cursor.execute("SELECT email FROM users")
+                        existing_emails = [row[0] for row in cursor.fetchall()]
+                        if existing_emails:
+                            logger.warning(f"Backing up {len(existing_emails)} existing users before recreating table.")
+                            backup_table = "users_backup_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+                            cursor.execute(f"ALTER TABLE users RENAME TO {backup_table}")
+                    # Recreate the table
                     cursor.execute("""
-                        CREATE TABLE IF NOT EXISTS users (
+                        CREATE TABLE users (
                             email TEXT PRIMARY KEY,
                             password_hash TEXT NOT NULL
                         )
                     """)
-                elif "password_hash" not in columns:
-                    # Migrate existing table by adding password_hash column
-                    cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+                    # Restore backed-up data with empty password_hash (users must re-signup)
+                    if existing_emails:
+                        for email in existing_emails:
+                            cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (email, ""))
                     conn.commit()
-                    st.warning("Database schema migrated. Please re-signup or update existing accounts.")
+                    st.warning("Database schema recreated. Existing users must re-signup with their emails.")
+                else:
+                    logger.info("Users table schema is correct.")
                 conn.commit()
         except sqlite3.OperationalError as e:
+            logger.error(f"Failed to initialize database: {e}")
             st.error(f"Failed to initialize database: {e}. Please check file permissions or contact support.")
         except Exception as e:
+            logger.error(f"Unexpected error initializing database: {e}")
             st.error(f"Unexpected error initializing database: {e}. Please try again later.")
 
     def login(self):
@@ -57,8 +78,10 @@ class UserManager:
                     else:
                         st.error("Invalid email or password")
             except sqlite3.OperationalError as e:
+                logger.error(f"Database error during login: {e}")
                 st.error(f"Database error during login: {e}. Please try again or contact support.")
             except Exception as e:
+                logger.error(f"Unexpected error during login: {e}")
                 st.error(f"Unexpected error during login: {e}. Please try again later.")
 
     def logout(self):
@@ -99,8 +122,10 @@ class UserManager:
                     st.success(f"Account created for {new_email}. You are now logged in.")
                     st.rerun()
             except sqlite3.OperationalError as e:
+                logger.error(f"Database error during signup: {e}")
                 st.error(f"Database error during signup: {e}. Please try again or contact support.")
             except Exception as e:
+                logger.error(f"Unexpected error during signup: {e}")
                 st.error(f"Unexpected error during signup: {e}. Please try again later.")
 
     def is_logged_in(self):
