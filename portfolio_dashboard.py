@@ -40,7 +40,8 @@ def main():
 
     st.sidebar.header("User")
     current_user = user_manager.get_current_user()
-    st.sidebar.write(f"Logged in as: {current_user}")
+    current_username = user_manager.get_current_username()
+    st.sidebar.write(f"Logged in as: {current_username} ({current_user})")
     user_manager.logout()
 
     if 'portfolios' not in st.session_state:
