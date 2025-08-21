@@ -64,9 +64,8 @@ class UserManager:
                 row = c.fetchone()
 
             if row and pbkdf2_sha256.verify(password, row[0]):
-                # store both keys for compatibility
                 st.session_state.logged_in_user = email
-                st.session_state.logged_in_username = email
+                st.session_state.logged_in_username = email  # alias
                 st.success(f"Welcome, {email}!")
                 st.rerun()
             else:
