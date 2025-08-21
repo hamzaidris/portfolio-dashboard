@@ -14,45 +14,71 @@ from trackerbazaar.add_dividend import render_add_dividend
 from trackerbazaar.broker_fees import render_broker_fees
 from trackerbazaar.guide import render_guide
 from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
-from trackerbazaar.users import UserManager  # Included for potential future use
-from trackerbazaar.portfolios import PortfolioManager  # Included for potential use
+from trackerbazaar.users import UserManager
+from trackerbazaar.portfolios import PortfolioManager
 from datetime import datetime
 
 # Add parent directory to sys.path for package resolution
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Debug: Print current working directory
-print("Current working directory:", os.getcwd())
 
 def main():
     st.set_page_config(page_title="TrackerBazaar - Portfolio Dashboard", layout="wide")
     st.title("📈 TrackerBazaar - Portfolio Dashboard")
     st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics.")
 
-    # Initialize session state for tracker and other flags
-    if 'tracker' not in st.session_state:
-        st.session_state.tracker = PortfolioTracker()
-        initialize_tracker(st.session_state.tracker)
-        st.session_state.update_allocations = False
-        st.session_state.update_filer_status = False
-        st.session_state.data_changed = False
+    user_manager = UserManager()
+    portfolio_manager = PortfolioManager()
 
-    tracker = st.session_state.tracker
+    # Handle login state
+    if not user_manager.is_logged_in():
+        user_manager.login()
+        st.info("Please log in to access your portfolios.")
+        return
 
-    st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide"])
+    # Initialize session state
+    if 'portfolios' not in st.session_state:
+        st.session_state.portfolios = {}
+    if 'selected_portfolio' not in st.session_state:
+        st.session_state.selected_portfolio = None
+
+    # Portfolio creation
+    st.sidebar.header("Portfolio Management")
+    new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new。当时
+
+    if st.sidebar.button("Create Portfolio", key="create_portfolio"):
+        tracker = portfolio_manager.create_portfolio(new_portfolio_name, user_manager.get_current_user())
+        if tracker:
+            st.session_state.portfolios[new_portfolio_name] = tracker
+            st.session_state.selected_portfolio = new_portfolio_name
+            st.success(f"Portfolio '{new_portfolio_name}' created successfully!")
+            st.rerun()
+
+    # Portfolio selection
+    tracker = portfolio_manager.select_portfolio(user_manager.get_current_user())
+    if not tracker:
+        st.info("No portfolio selected. Create or select a portfolio.")
+        return
+
+    # Initialize tracker if not already initialized
+    if not tracker.current_prices:
+        initialize_tracker(tracker)
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
 
     st.sidebar.header("Tax Settings")
     filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
     if filer_status != tracker.filer_status:
         tracker.update_filer_status(filer_status)
-        st.session_state.update_filer_status = True
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
+        st.session_state.data_changed = True
 
-    if st.session_state.get('update_filer_status', False) or st.session_state.get('update_allocations', False) or st.session_state.get('data_changed', False):
-        st.session_state.update_filer_status = False
-        st.session_state.update_allocations = False
+    if st.session_state.get('data_changed', False):
+        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
         st.session_state.data_changed = False
         st.rerun()
+
+    # Navigation
+    st.sidebar.header("Navigation")
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide", "Sign Up"])
 
     # Call the appropriate tab function
     if page == "Dashboard":
@@ -80,6 +106,8 @@ def main():
         render_broker_fees(tracker)
     elif page == "Guide":
         render_guide()
+    elif page == "Sign Up":
+        user_manager.signup()
 
 if __name__ == '__main__':
     main()
