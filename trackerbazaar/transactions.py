@@ -1,39 +1,58 @@
-import sqlite3
-from datetime import datetime
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from trackerbazaar.portfolios import PortfolioManager
+from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
 
-DB_FILE = "trackerbazaar_v2.db"  # ✅ new DB
 
-def init_transactions_table():
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL,
-                portfolio_name TEXT NOT NULL,
-                ticker TEXT NOT NULL,
-                quantity INTEGER NOT NULL,
-                price REAL NOT NULL,
-                type TEXT CHECK(type IN ('buy','sell')) NOT NULL,
-                timestamp TEXT NOT NULL
+def show_transactions_ui(current_user):
+    st.title("💼 Portfolio Transactions")
+
+    if not current_user:
+        st.warning("Please log in to manage your transactions.")
+        return
+
+    pm = PortfolioManager()
+    portfolios = pm.list_portfolios(current_user)
+
+    if not portfolios:
+        st.info("No portfolios found. Please create one first.")
+        return
+
+    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
+
+    tracker = pm.load_portfolio(selected_portfolio, current_user)
+    if not tracker:
+        st.error("Failed to load portfolio.")
+        return
+
+    st.markdown(f"### Transactions for **{selected_portfolio}**")
+
+    # ---- Transactions Table ----
+    transactions = tracker.get_transactions()
+    if transactions.empty:
+        st.info("No transactions available.")
+    else:
+        st.dataframe(transactions, use_container_width=True)
+
+        # ---- Chart: Buy vs Sell by Ticker ----
+        if "Type" in transactions.columns and "Ticker" in transactions.columns:
+            fig = px.histogram(
+                transactions,
+                x="Ticker",
+                color="Type",
+                title="Buy vs Sell Count by Stock",
+                barmode="group",
             )
-        """)
-        conn.commit()
+            st.plotly_chart(fig, use_container_width=True)
 
-def add_transaction(email, portfolio_name, ticker, quantity, price, tx_type):
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO transactions (email, portfolio_name, ticker, quantity, price, type, timestamp) VALUES (?,?,?,?,?,?,?)",
-            (email, portfolio_name, ticker, quantity, price, tx_type, datetime.now().isoformat())
-        )
-        conn.commit()
-
-def get_transactions(email, portfolio_name):
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT ticker, quantity, price, type, timestamp FROM transactions WHERE email=? AND portfolio_name=? ORDER BY id DESC", (email, portfolio_name))
-        return c.fetchall()
-
-# Initialize on import
-init_transactions_table()
+        # ---- Chart: Invested Over Time ----
+        if "Date" in transactions.columns and "Amount" in transactions.columns:
+            transactions["Cumulative Invested"] = transactions["Amount"].cumsum()
+            fig2 = px.line(
+                transactions,
+                x="Date",
+                y="Cumulative Invested",
+                title="Cumulative Investment Over Time",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
