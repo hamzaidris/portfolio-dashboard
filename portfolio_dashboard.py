@@ -49,11 +49,11 @@ def main():
     if 'selected_portfolio' not in st.session_state:
         st.session_state.selected_portfolio = None
 
-    # Portfolio creation - FIXED: PortfolioTracker doesn't take username parameter
+    # Portfolio creation
     st.sidebar.header("Portfolio Management")
     new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new_portfolio_name")
     if st.sidebar.button("Create Portfolio", key="create_portfolio"):
-        tracker = PortfolioTracker()  # REMOVED username parameter
+        tracker = portfolio_manager.create_portfolio(new_portfolio_name, user_manager.get_current_user())
         if tracker:
             st.session_state.portfolios[new_portfolio_name] = tracker
             st.session_state.selected_portfolio = new_portfolio_name
