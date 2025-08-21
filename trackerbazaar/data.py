@@ -1,16 +1,14 @@
 import sqlite3
-import os
 
-# ✅ Single source of truth for DB file
+# ✅ Single source of truth for DB name
 DB_FILE = "trackerbazaar_v3.db"
 
-# ✅ Central schema definitions
 TABLES = {
     "users": """
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL
-        )
+        );
     """,
     "portfolios": """
         CREATE TABLE IF NOT EXISTS portfolios (
@@ -18,7 +16,7 @@ TABLES = {
             name TEXT NOT NULL,
             owner_email TEXT NOT NULL,
             FOREIGN KEY(owner_email) REFERENCES users(email)
-        )
+        );
     """,
     "transactions": """
         CREATE TABLE IF NOT EXISTS transactions (
@@ -30,7 +28,7 @@ TABLES = {
             quantity REAL NOT NULL,
             price REAL NOT NULL,
             FOREIGN KEY(portfolio_id) REFERENCES portfolios(id)
-        )
+        );
     """,
     "dividends": """
         CREATE TABLE IF NOT EXISTS dividends (
@@ -40,7 +38,7 @@ TABLES = {
             ticker TEXT NOT NULL,
             amount REAL NOT NULL,
             FOREIGN KEY(portfolio_id) REFERENCES portfolios(id)
-        )
+        );
     """,
     "cash": """
         CREATE TABLE IF NOT EXISTS cash (
@@ -50,14 +48,22 @@ TABLES = {
             amount REAL NOT NULL,
             type TEXT CHECK(type IN ('deposit','withdraw')) NOT NULL,
             FOREIGN KEY(portfolio_id) REFERENCES portfolios(id)
-        )
+        );
     """
 }
 
+
 def init_db():
-    """Initialize database with schema."""
+    """Initialize database with schema if missing."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         for name, ddl in TABLES.items():
-            cursor.execute(ddl)
+            try:
+                cursor.executescript(ddl.strip())
+            except Exception as e:
+                print(f"[DB Init] Error creating table {name}: {e}")
         conn.commit()
+
+
+# ✅ Run automatically on import (no manual step needed)
+init_db()
