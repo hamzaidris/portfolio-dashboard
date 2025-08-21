@@ -31,8 +31,12 @@ def main():
 
     # Handle login state
     if not user_manager.is_logged_in():
-        user_manager.login()
-        st.info("Please log in to access your portfolios.")
+        tabs = st.tabs(["Login", "Sign Up"])
+        with tabs[0]:
+            user_manager.login()
+        with tabs[1]:
+            user_manager.signup()
+        st.info("Please log in or sign up to access your portfolios.")
         return
 
     # Initialize session state
@@ -77,7 +81,7 @@ def main():
 
     # Navigation
     st.sidebar.header("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide", "Sign Up"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide"])
 
     # Call the appropriate tab function
     if page == "Dashboard":
@@ -105,8 +109,6 @@ def main():
         render_broker_fees(tracker)
     elif page == "Guide":
         render_guide()
-    elif page == "Sign Up":
-        user_manager.signup()
 
 if __name__ == '__main__':
     main()
