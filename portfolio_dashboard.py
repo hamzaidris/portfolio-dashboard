@@ -42,7 +42,7 @@ def render_login():
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
+        submit = st.form_form_submit_button("Login")
         if submit:
             user_data = login_user(username, password)
             if user_data:
