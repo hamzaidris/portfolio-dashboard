@@ -29,7 +29,6 @@ def main():
     user_manager = UserManager()
     portfolio_manager = PortfolioManager()
 
-    # Handle login state
     if not user_manager.is_logged_in():
         tabs = st.tabs(["Login", "Sign Up"])
         with tabs[0]:
@@ -39,34 +38,43 @@ def main():
         st.info("Please log in or sign up to access your portfolios.")
         return
 
-    # Show logout button in sidebar for logged-in users
     st.sidebar.header("User")
+    current_user = user_manager.get_current_user()
+    st.sidebar.write(f"Logged in as: {current_user}")
     user_manager.logout()
 
-    # Initialize session state
     if 'portfolios' not in st.session_state:
         st.session_state.portfolios = {}
     if 'selected_portfolio' not in st.session_state:
         st.session_state.selected_portfolio = None
 
-    # Portfolio creation
     st.sidebar.header("Portfolio Management")
     new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new_portfolio_name")
-    if st.sidebar.button("Create Portfolio", key="create_portfolio"):
-        tracker = portfolio_manager.create_portfolio(new_portfolio_name, user_manager.get_current_user())
-        if tracker:
-            st.session_state.portfolios[new_portfolio_name] = tracker
-            st.session_state.selected_portfolio = new_portfolio_name
-            st.success(f"Portfolio '{new_portfolio_name}' created successfully!")
-            st.rerun()
+    if st.sidebar.button("Create Portfolio"):
+        if not new_portfolio_name.strip():
+            st.sidebar.error("Portfolio name cannot be empty.")
+        else:
+            tracker = portfolio_manager.create_portfolio(new_portfolio_name, user_manager.get_current_user())
+            if tracker:
+                st.session_state.portfolios[new_portfolio_name] = tracker
+                st.session_state.selected_portfolio = new_portfolio_name
+                st.sidebar.success(f"Created portfolio: {new_portfolio_name}")
+                st.rerun()
 
-    # Portfolio selection
+    portfolio_names = [name for name in st.session_state.portfolios.keys() if name]
+    selected_portfolio = st.sidebar.selectbox("Select Portfolio", options=[""] + portfolio_names, index=0 if not st.session_state.selected_portfolio else portfolio_names.index(st.session_state.selected_portfolio) + 1)
+    if selected_portfolio and selected_portfolio != st.session_state.selected_portfolio:
+        st.session_state.selected_portfolio = selected_portfolio
+        tracker = portfolio_manager.select_portfolio(user_manager.get_current_user())
+        if tracker:
+            st.session_state.portfolios[selected_portfolio] = tracker
+        st.rerun()
+
     tracker = portfolio_manager.select_portfolio(user_manager.get_current_user())
-    if not tracker:
-        st.info("No portfolio selected. Create or select a portfolio.")
+    if tracker is None:
+        st.error("Failed to load portfolio. Please create or select a valid portfolio.")
         return
 
-    # Initialize tracker if not already initialized
     if not tracker.current_prices:
         initialize_tracker(tracker)
         portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
@@ -83,11 +91,9 @@ def main():
         st.session_state.data_changed = False
         st.rerun()
 
-    # Navigation
     st.sidebar.header("Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Portfolio", "Distribution", "Cash", "Stock Explorer", "Notifications", "Transactions", "Current Prices", "Add Transaction", "Add Dividend", "Broker Fees", "Guide"])
 
-    # Call the appropriate tab function
     if page == "Dashboard":
         render_dashboard(tracker)
     elif page == "Portfolio":
