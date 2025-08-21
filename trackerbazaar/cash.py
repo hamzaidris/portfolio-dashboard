@@ -6,7 +6,7 @@ from trackerbazaar.portfolios import PortfolioManager
 portfolio_manager = PortfolioManager()
 
 def show_cash(selected_portfolio: str, user_email: str):
-    """Display and manage cash balance for the selected portfolio."""
+    """Cash Manager — record deposits/withdrawals and show balance."""
 
     try:
         tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
@@ -14,55 +14,68 @@ def show_cash(selected_portfolio: str, user_email: str):
         st.error(f"Error loading portfolio: {e}")
         return
 
-    st.subheader(f"💵 Cash Management — {selected_portfolio}")
+    st.subheader(f"💵 Cash Manager — {selected_portfolio}")
 
-    # ---- Current Balance ----
-    st.metric("Current Cash Balance", f"PKR {tracker.cash_balance:,.2f}")
+    # ---- Add Cash Transaction ----
+    with st.form("cash_form", clear_on_submit=True):
+        st.markdown("### ➕ Add Cash Transaction")
 
-    # ---- Add Cash ----
-    with st.expander("➕ Add Cash", expanded=False):
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns(3)
         with col1:
-            amount = st.number_input("Amount to Add (PKR)", min_value=0.0, step=100.0)
+            txn_type = st.selectbox("Type", ["Deposit", "Withdrawal"])
         with col2:
-            if st.button("Add", use_container_width=True, type="primary", key="add_cash"):
-                try:
-                    tracker.add_cash(amount)
-                    portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
-                    st.success(f"Added PKR {amount:,.2f} ✅")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to add cash: {e}")
+            amount = st.number_input("Amount (PKR)", min_value=0.0, step=0.01)
+        with col3:
+            date = st.date_input("Date")
 
-    # ---- Withdraw Cash ----
-    with st.expander("➖ Withdraw Cash", expanded=False):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            amount = st.number_input("Amount to Withdraw (PKR)", min_value=0.0, step=100.0)
-        with col2:
-            if st.button("Withdraw", use_container_width=True, type="secondary", key="withdraw_cash"):
-                try:
-                    tracker.withdraw_cash(amount)
-                    portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
-                    st.success(f"Withdrew PKR {amount:,.2f} ✅")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to withdraw cash: {e}")
+        submitted = st.form_submit_button("💾 Save Transaction")
+
+        if submitted:
+            try:
+                tracker.add_cash({
+                    "type": txn_type,
+                    "amount": amount,
+                    "date": str(date)
+                })
+                portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
+                st.success(f"{txn_type} of {amount:,.2f} PKR recorded.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to save cash transaction: {e}")
 
     st.divider()
 
     # ---- Cash History ----
-    if not tracker.cash_history:
-        st.info("No cash transactions yet.")
-    else:
-        df = pd.DataFrame(tracker.cash_history)
-        st.dataframe(df, use_container_width=True)
+    st.subheader("📑 Cash Transactions")
+    if tracker.cash:
+        cash_df = pd.DataFrame(tracker.cash)
 
-        # Download option
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download Cash History as CSV",
-            data=csv,
-            file_name=f"{selected_portfolio}_cash_history.csv",
-            mime="text/csv",
+        cash_df = cash_df.rename(columns={
+            "type": "Type",
+            "amount": "Amount",
+            "date": "Date"
+        })
+
+        st.dataframe(cash_df, use_container_width=True)
+
+        # ---- Calculate Balance ----
+        deposits = cash_df[cash_df["Type"] == "Deposit"]["Amount"].sum()
+        withdrawals = cash_df[cash_df["Type"] == "Withdrawal"]["Amount"].sum()
+        balance = deposits - withdrawals
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Deposits", f"{deposits:,.2f} PKR")
+        col2.metric("Total Withdrawals", f"{withdrawals:,.2f} PKR")
+        col3.metric("Available Balance", f"{balance:,.2f} PKR")
+
+        # ---- Trend chart ----
+        st.subheader("📊 Cash Balance Trend")
+        cash_df["Net"] = cash_df.apply(
+            lambda row: row["Amount"] if row["Type"] == "Deposit" else -row["Amount"], axis=1
         )
+        cash_df["Cumulative Balance"] = cash_df["Net"].cumsum()
+
+        st.line_chart(cash_df.set_index("Date")["Cumulative Balance"])
+
+    else:
+        st.info("No cash transactions recorded yet. Add one above ⬆️")
