@@ -40,15 +40,15 @@ def render_register():
 def render_login():
     st.header("Login")
     with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        username_input = st.text_input("Username")
+        password_input = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
         if submit:
-            user_data = login_user(username, password)
+            user_data = login_user(username_input, password_input)
             if user_data:
                 st.session_state.authenticated = True
                 st.session_state.user_data = user_data
-                st.session_state.username = username
+                st.session_state.username = user_data["username"]
                 st.session_state.page = "dashboard"
                 st.rerun()
             else:
