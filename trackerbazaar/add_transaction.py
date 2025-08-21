@@ -1,91 +1,91 @@
 import streamlit as st
-from trackerbazaar.users import UserManager
-from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.tracker import initialize_tracker
-from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
-from trackerbazaar.cash import render_cash
-from trackerbazaar.portfolio import render_portfolio
-from trackerbazaar.dashboard import render_dashboard
-from trackerbazaar.stock_explorer import render_stock_explorer
-from trackerbazaar.guide import render_guide
-from trackerbazaar.signup import render_signup
-from trackerbazaar.distribution import render_distribution
+from datetime import datetime
+from trackerbazaar.tracker import PortfolioTracker
 
-def main():
-    st.set_page_config(layout="wide", page_title="Portfolio Dashboard", page_icon="📈")
-    
-    # Custom CSS for mobile-friendly design
-    st.markdown("""
-        <style>
-        .stApp {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 10px;
-        }
-        .stTabs [data-baseweb="tab-list"] {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-        .stTabs [data-baseweb="tab"] {
-            flex: 1 1 auto;
-            min-width: 120px;
-            margin: 2px;
-        }
-        @media (max-width: 768px) {
-            .stApp {
-                padding: 5px;
+def render_add_transaction(tracker):
+    st.header("Add Transaction")
+    st.write("Add a new transaction to your portfolio.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        date = st.date_input("Date", value=datetime.now(), key="add_trans_date")
+    with col2:
+        trans_type = st.selectbox("Transaction Type", ["Buy", "Sell", "Deposit", "Withdraw"], key="add_trans_type")
+
+    if trans_type in ["Buy", "Sell"]:
+        ticker = st.selectbox("Stock Ticker", list(tracker.current_prices.keys()), key="add_trans_ticker")
+        current_price = tracker.current_prices.get(ticker, {}).get('price', 0.0)
+        price = st.number_input("Price (PKR)", value=current_price, step=0.01, key="add_trans_price")
+        quantity = st.number_input("Quantity", min_value=0.0, step=1.0, key="add_trans_quantity")
+        fee = st.number_input("Fee (PKR)", min_value=0.0, value=0.0, step=0.01, key="add_trans_fee")
+    else:
+        ticker = None
+        price = 0.0
+        quantity = st.number_input("Amount (PKR)", min_value=0.0, step=1.0, key="add_trans_amount")
+        fee = 0.0
+
+    if st.button("Add Transaction", key="add_trans_submit"):
+        try:
+            tracker.add_transaction(date, ticker, trans_type, quantity, price, fee)
+            if trans_type == "Deposit":
+                st.success("Cash has been added")
+            else:
+                st.success("Transaction has been added")
+            st.session_state.data_changed = True
+            st.rerun()
+        except ValueError as e:
+            st.error(str(e))
+
+def render_sample_distribution(tracker):
+    st.subheader("Sample Distribution")
+    with st.form("distribute_cash_form"):
+        date = st.date_input("Date", value=datetime(2025, 8, 21, 10, 16))
+        cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
+        sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
+        submit_calc = st.form_submit_button("Calculate Sample Distribution")
+    if submit_calc:
+        if sharia_only:
+            sharia_allocations = {
+                ticker: alloc for ticker, alloc in tracker.target_allocations.items()
+                if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
             }
-            .stTabs [data-baseweb="tab"] {
-                min-width: 100px;
-            }
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    user_manager = UserManager()
-    user_manager.login()
-    if not user_manager.is_logged_in():
-        st.stop()
-
-    portfolio_manager = PortfolioManager()
-    selected_portfolio = portfolio_manager.select_portfolio()
-    if selected_portfolio is None:
-        with st.form(key="create_portfolio_form"):
-            portfolio_name = st.text_input("Enter Portfolio Name", key="new_portfolio_name")
-            submit_button = st.form_submit_button("Create")
-            if submit_button:
-                if portfolio_manager.create_portfolio(portfolio_name):
-                    st.success(f"Portfolio '{portfolio_name}' created!")
-                    # Automatically select the new portfolio and rerun
-                    st.session_state.selected_portfolio = portfolio_name
-                    st.rerun()
+            if not sharia_allocations:
+                st.error("No Sharia-compliant stocks with positive allocations.")
+            else:
+                total_alloc = sum(sharia_allocations.values())
+                if total_alloc == 0:
+                    st.error("Total allocation for Sharia-compliant stocks is 0.")
                 else:
-                    st.error("Portfolio name already exists!")
-        st.stop()
-
-    tracker = portfolio_manager.get_portfolio(selected_portfolio)
-    if tracker is None:
-        st.error("Tracker not found for selected portfolio.")
-        st.stop()
-
-    initialize_tracker(tracker)
-
-    pages = {
-        "Portfolio": render_portfolio,
-        "Dashboard": render_dashboard,
-        "Add Transaction": lambda t: [render_add_transaction(t), render_sample_distribution(t)],
-        "Cash": render_cash,
-        "Stock Explorer": render_stock_explorer,
-        "Notifications": lambda t: st.write("Notifications page (under development)"),
-        "Guide": render_guide,
-        "Signup": render_signup,
-        "Distribution": render_distribution
-    }
-    page = st.sidebar.selectbox("Navigate", list(pages.keys()), key="nav_page")
-
-    if page in pages:
-        pages[page](tracker)
-
-if __name__ == '__main__':
-    main()
+                    normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                    temp_tracker = PortfolioTracker()
+                    temp_tracker.target_allocations = normalized_allocations
+                    temp_tracker.current_prices = tracker.current_prices
+                    dist_df = temp_tracker.calculate_distribution(cash)
+                    st.session_state.dist_df = dist_df
+                    st.dataframe(
+                        dist_df,
+                        column_config={
+                            "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                            "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                            "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                            "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                            "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                            "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                        },
+                        use_container_width=True
+                    )
+        else:
+            dist_df = tracker.calculate_distribution(cash)
+            st.session_state.dist_df = dist_df
+            st.dataframe(
+                dist_df,
+                column_config={
+                    "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "SST": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
+                    "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
+                },
+                use_container_width=True
+            )
