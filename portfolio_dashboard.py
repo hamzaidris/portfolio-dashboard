@@ -1,96 +1,62 @@
 import streamlit as st
-from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
-from trackerbazaar.portfolio import render_portfolio
-from trackerbazaar.cash import render_cash
-from trackerbazaar.add_transaction import render_add_transaction
-from trackerbazaar.add_dividend import render_add_dividend
-from trackerbazaar.notifications import render_notifications
-from trackerbazaar.dashboard import render_dashboard
-from trackerbazaar.transactions import render_transactions
-from trackerbazaar.portfolios import PortfolioManager
-
-# Assume an auth module exists
-from trackerbazaar.auth import login_user  # Replace with your actual auth module
+from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.auth import login_user, create_user
 
 def main():
+    st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
+
     # Initialize session state
-    if 'logged_in' not in st.session_state:
-        st.session_state['logged_in'] = False
-        st.session_state['user'] = None
-        st.session_state['tracker'] = None
-        st.session_state['portfolio_name'] = None
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+        st.session_state.user_data = None
+        st.session_state.data_changed = False
 
-    # Check if user is logged in
-    if not st.session_state['logged_in']:
-        st.title("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            user_data = login_user(username, password)  # Returns {'username': str, 'email': str} or None
-            if user_data:
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = user_data
-                st.session_state['tracker'] = PortfolioTracker()
-                initialize_tracker(st.session_state['tracker'])
-                st.success(f"Logged in as {user_data['username']}")
-                st.rerun()  # Refresh to show main app
-            else:
-                st.error("Invalid credentials")
-        return
+    if not st.session_state.logged_in:
+        st.sidebar.header("User Authentication")
+        auth_choice = st.sidebar.radio("Choose Action", ["Login", "Register"])
 
-    # User is logged in
-    user = st.session_state['user']
-    tracker = st.session_state['tracker']
-    portfolio_manager = PortfolioManager()
+        username = st.sidebar.text_input("Username")
+        password = st.sidebar.text_input("Password", type="password")
 
-    # Display user info and logout button
-    st.sidebar.write(f"Logged in as: {user['username']} ({user['email']})")
-    if st.sidebar.button("Logout"):
-        st.session_state['logged_in'] = False
-        st.session_state['user'] = None
-        st.session_state['tracker'] = None
-        st.session_state['portfolio_name'] = None
-        st.rerun()  # Refresh to show login page
+        if auth_choice == "Login":
+            if st.sidebar.button("Login"):
+                user_data = login_user(username, password)
+                if user_data:
+                    st.session_state.logged_in = True
+                    st.session_state.user_data = user_data
+                    st.success(f"Welcome back, {user_data['username']}!")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+        else:  # Register
+            email = st.sidebar.text_input("Email")
+            if st.sidebar.button("Register"):
+                if create_user(username, email, password):
+                    st.success("User registered successfully! Please log in.")
+                else:
+                    st.error("Username or email already exists. Try again.")
 
-    # Portfolio selection
-    portfolios = portfolio_manager.list_portfolios()
-    portfolio_name = st.sidebar.selectbox("Select Portfolio", [""] + portfolios)
-    if portfolio_name:
-        st.session_state['portfolio_name'] = portfolio_name
-        portfolio_data = portfolio_manager.load_portfolio(portfolio_name)
-        if portfolio_data:
-            tracker.__dict__.update(portfolio_data)
+    else:
+        st.sidebar.success(f"Logged in as {st.session_state.user_data['username']}")
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.user_data = None
+            st.rerun()
 
-    # Navigation
-    page = st.sidebar.selectbox("Navigate", [
-        "Dashboard",
-        "Portfolio",
-        "Cash Management",
-        "Add Transaction",
-        "Transaction History",
-        "Add Dividend",
-        "Notifications"
-    ])
+        # Load tracker for the logged-in user
+        tracker = PortfolioTracker(st.session_state.user_data["username"])
 
-    # Render selected page
-    if page == "Dashboard":
-        render_dashboard(tracker)
-    elif page == "Portfolio":
-        render_portfolio(tracker)
-    elif page == "Cash Management":
-        render_cash(tracker)
-    elif page == "Add Transaction":
-        render_add_transaction(tracker)
-    elif page == "Transaction History":
-        render_transactions(tracker)
-    elif page == "Add Dividend":
-        render_add_dividend(tracker)
-    elif page == "Notifications":
-        render_notifications(tracker)
+        st.title("📊 Portfolio Dashboard")
 
-    # Save portfolio state
-    if st.session_state['portfolio_name']:
-        portfolio_manager.save_portfolio(st.session_state['portfolio_name'], tracker.__dict__)
+        # Example navigation (you can expand)
+        menu = st.sidebar.radio("Navigate", ["Portfolio", "Add Dividend"])
+
+        if menu == "Portfolio":
+            st.subheader("Portfolio Overview")
+            tracker.render_portfolio()  # assuming you have this function
+        elif menu == "Add Dividend":
+            from trackerbazaar.dividends import render_add_dividend
+            render_add_dividend(tracker)
 
 if __name__ == "__main__":
     main()
