@@ -1,15 +1,13 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
 
 
 def show_transactions_ui(current_user):
-    st.title("💼 Portfolio Transactions")
+    st.title("📜 Transactions History")
 
     if not current_user:
-        st.warning("Please log in to manage your transactions.")
+        st.warning("Please log in to view transactions.")
         return
 
     pm = PortfolioManager()
@@ -26,33 +24,24 @@ def show_transactions_ui(current_user):
         st.error("Failed to load portfolio.")
         return
 
-    st.markdown(f"### Transactions for **{selected_portfolio}**")
-
-    # ---- Transactions Table ----
     transactions = tracker.get_transactions()
-    if transactions.empty:
-        st.info("No transactions available.")
-    else:
-        st.dataframe(transactions, use_container_width=True)
+    if not transactions:
+        st.info("No transactions found in this portfolio.")
+        return
 
-        # ---- Chart: Buy vs Sell by Ticker ----
-        if "Type" in transactions.columns and "Ticker" in transactions.columns:
-            fig = px.histogram(
-                transactions,
-                x="Ticker",
-                color="Type",
-                title="Buy vs Sell Count by Stock",
-                barmode="group",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    # ---- Convert to DataFrame ----
+    df = pd.DataFrame(transactions)
 
-        # ---- Chart: Invested Over Time ----
-        if "Date" in transactions.columns and "Amount" in transactions.columns:
-            transactions["Cumulative Invested"] = transactions["Amount"].cumsum()
-            fig2 = px.line(
-                transactions,
-                x="Date",
-                y="Cumulative Invested",
-                title="Cumulative Investment Over Time",
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+    # ---- Filter by ticker ----
+    tickers = ["All"] + sorted(df["ticker"].unique().tolist())
+    filter_ticker = st.selectbox("Filter by Stock", tickers)
+
+    if filter_ticker != "All":
+        df = df[df["ticker"] == filter_ticker]
+
+    st.markdown("### Transaction Records")
+    st.dataframe(df, use_container_width=True)
+
+    # ---- Download CSV ----
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Download as CSV", csv, f"{selected_portfolio}_transactions.csv", "text/csv")
