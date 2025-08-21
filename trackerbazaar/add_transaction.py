@@ -23,7 +23,7 @@ def render_add_transaction(tracker):
 
         if st.button("Add Transaction", key="add_trans_submit"):
             cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
-            if trans_type == "Buy" and cash < total_cost:
+            if trans_type == "Buy" and cash > total_cost:
                 st.error(f"Insufficient cash available. Required: PKR {total_cost:.2f}, Available: PKR {cash:.2f}", icon="⚠️")
                 st.success("Please add cash or adjust the transaction.", icon="ℹ️")
                 time.sleep(5)
