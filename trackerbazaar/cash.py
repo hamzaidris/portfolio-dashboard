@@ -8,9 +8,9 @@ def render_cash(tracker):
     st.write("Manage your cash balance and add new cash transactions.")
 
     # Display current cash balance with fallback
-    cash_balance = getattr(tracker, 'cash_balance', 0.0)  # Fallback to 0.0 if attribute missing
+    cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
     st.subheader("Current Cash Balance")
-    st.write(f"PKR {cash_balance:.2f}")
+    st.write(f"PKR {cash:.2f}")
 
     # Add Cash Form
     st.subheader("Add Cash")
@@ -36,7 +36,7 @@ def render_cash(tracker):
         amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0, key="withdraw_amount")
         if st.form_submit_button("Withdraw Cash"):
             try:
-                if amount > cash_balance:
+                if amount > cash:
                     raise ValueError("Insufficient cash balance for withdrawal")
                 tracker.add_transaction(date, None, "Withdraw", amount, 0.0, 0.0)
                 st.success("Cash has been withdrawn successfully!", icon="✅")
