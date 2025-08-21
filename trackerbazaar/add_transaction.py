@@ -2,8 +2,13 @@ import streamlit as st
 import time
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.portfolios import PortfolioManager
 
 def render_add_transaction(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.header("Add Transaction")
     st.write("Add a new transaction to your portfolio.")
 
@@ -43,6 +48,7 @@ def render_add_transaction(tracker):
             else:
                 try:
                     tracker.add_transaction(date, ticker, trans_type, quantity, price, fee)
+                    portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                     st.success("Transaction has been added", icon="✅")
                     st.session_state.data_changed = True
                     time.sleep(5)
@@ -67,6 +73,7 @@ def render_add_transaction(tracker):
             else:
                 try:
                     tracker.add_transaction(date, None, trans_type, amount, 0.0, fee)
+                    portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                     st.success("Cash has been added" if trans_type == "Deposit" else "Cash has been withdrawn", icon="✅")
                     st.session_state.data_changed = True
                     time.sleep(5)
@@ -77,9 +84,13 @@ def render_add_transaction(tracker):
                     st.rerun()
 
 def render_sample_distribution(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.subheader("Sample Distribution")
     with st.form("distribute_cash_form"):
-        date = st.date_input("Date", value=datetime(2025, 8, 21, 12, 35))
+        date = st.date_input("Date", value=datetime.now())
         cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
         sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
         submit_calc = st.form_submit_button("Calculate Sample Distribution")
@@ -111,6 +122,7 @@ def render_sample_distribution(tracker):
                             temp_tracker.current_prices = tracker.current_prices
                             dist_df = temp_tracker.calculate_distribution(cash)
                             st.session_state.dist_df = dist_df
+                            portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                 else:
                     total_alloc = sum(tracker.target_allocations.values())
                     if total_alloc == 0:
@@ -124,6 +136,7 @@ def render_sample_distribution(tracker):
                         temp_tracker.current_prices = tracker.current_prices
                         dist_df = temp_tracker.calculate_distribution(cash)
                         st.session_state.dist_df = dist_df
+                        portfolio_manager.save_portfolio(portfolio_name, email, tracker)
 
     # Display the distribution table if it exists in session state
     if 'dist_df' in st.session_state and st.session_state.dist_df is not None:
