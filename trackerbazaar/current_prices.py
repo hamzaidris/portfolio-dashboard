@@ -1,36 +1,22 @@
-# trackerbazaar/portfolio.py
+# trackerbazaar/current_prices.py
 
-from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.current_prices import CurrentPrices  # ✅ fixed
+import json
+import os
 
-class Portfolio:
-    def __init__(self, name):
-        self.name = name
-        self.tracker = PortfolioTracker()
-        self.price_service = CurrentPrices()   # ✅ instantiate
+DATA_FILE = os.path.join(os.path.dirname(__file__), "market-data.json")
 
-    def get_summary(self):
-        holdings = self.tracker.get_holdings(self.name)
-        summary = {"holdings": [], "total_value": 0}
+class CurrentPrices:
+    def __init__(self, data_file: str = DATA_FILE):
+        self.data_file = data_file
+        self._load_prices()
 
-        for holding in holdings:
-            ticker = holding["ticker"]
-            qty = holding["quantity"]
-            avg_price = holding["avg_price"]
+    def _load_prices(self):
+        if os.path.exists(self.data_file):
+            with open(self.data_file, "r") as f:
+                self.prices = json.load(f)
+        else:
+            self.prices = {}
 
-            current_price = self.price_service.get_price(ticker)
-            value = qty * current_price
-            profit_loss = (current_price - avg_price) * qty
-
-            summary["holdings"].append({
-                "ticker": ticker,
-                "quantity": qty,
-                "avg_price": avg_price,
-                "current_price": current_price,
-                "value": value,
-                "profit_loss": profit_loss,
-            })
-
-            summary["total_value"] += value
-
-        return summary
+    def get_price(self, ticker: str) -> float:
+        """Return the current price of a stock (defaults to 0 if missing)."""
+        return float(self.prices.get(ticker, 0.0))
