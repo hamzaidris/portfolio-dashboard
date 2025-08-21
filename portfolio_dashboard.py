@@ -1,62 +1,102 @@
 import streamlit as st
 from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.auth import login_user, create_user
+from trackerbazaar.auth import create_user, login_user
 
-def main():
-    st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
+# ---------------------------
+# Initialize session state
+# ---------------------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "user_data" not in st.session_state:
+    st.session_state.user_data = None
+if "page" not in st.session_state:
+    st.session_state.page = "login"  # default page
 
-    # Initialize session state
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-        st.session_state.user_data = None
-        st.session_state.data_changed = False
+# ---------------------------
+# Render Register Page
+# ---------------------------
+def render_register():
+    st.header("Register")
+    with st.form("register_form"):
+        username = st.text_input("Username")
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Register")
+        if submit:
+            if not username or not email or not password:
+                st.error("All fields are required.")
+            elif create_user(username, email, password):
+                st.success("Account created! Please login.")
+                st.session_state.page = "login"
+                st.rerun()
+            else:
+                st.error("Username or email already exists. Try again.")
 
-    if not st.session_state.logged_in:
-        st.sidebar.header("User Authentication")
-        auth_choice = st.sidebar.radio("Choose Action", ["Login", "Register"])
+# ---------------------------
+# Render Login Page
+# ---------------------------
+def render_login():
+    st.header("Login")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        if submit:
+            user_data = login_user(username, password)
+            if user_data:
+                st.session_state.authenticated = True
+                st.session_state.user_data = user_data
+                st.session_state.page = "dashboard"
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
 
-        username = st.sidebar.text_input("Username")
-        password = st.sidebar.text_input("Password", type="password")
+    st.write("Don't have an account?")
+    if st.button("Register here"):
+        st.session_state.page = "register"
+        st.rerun()
 
-        if auth_choice == "Login":
-            if st.sidebar.button("Login"):
-                user_data = login_user(username, password)
-                if user_data:
-                    st.session_state.logged_in = True
-                    st.session_state.user_data = user_data
-                    st.success(f"Welcome back, {user_data['username']}!")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
-        else:  # Register
-            email = st.sidebar.text_input("Email")
-            if st.sidebar.button("Register"):
-                if create_user(username, email, password):
-                    st.success("User registered successfully! Please log in.")
-                else:
-                    st.error("Username or email already exists. Try again.")
+# ---------------------------
+# Render Dashboard
+# ---------------------------
+def render_dashboard():
+    st.header("Portfolio Dashboard")
 
-    else:
-        st.sidebar.success(f"Logged in as {st.session_state.user_data['username']}")
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.user_data = None
-            st.rerun()
-
-        # Load tracker for the logged-in user
+    # ✅ Ensure user_data exists before creating tracker
+    if st.session_state.user_data and "username" in st.session_state.user_data:
         tracker = PortfolioTracker(st.session_state.user_data["username"])
+    else:
+        st.error("No user data found. Please log in again.")
+        st.session_state.authenticated = False
+        st.session_state.page = "login"
+        st.rerun()
+        return
 
-        st.title("📊 Portfolio Dashboard")
+    st.success(f"Welcome, {st.session_state.user_data['username']}!")
 
-        # Example navigation (you can expand)
-        menu = st.sidebar.radio("Navigate", ["Portfolio", "Add Dividend"])
+    # Example features (add your own pages here)
+    st.write("Here will be portfolio stats, transactions, dividends, etc.")
 
-        if menu == "Portfolio":
-            st.subheader("Portfolio Overview")
-            tracker.render_portfolio()  # assuming you have this function
-        elif menu == "Add Dividend":
-            from trackerbazaar.dividends import render_add_dividend
-            render_add_dividend(tracker)
+    if st.button("Logout"):
+        st.session_state.authenticated = False
+        st.session_state.user_data = None
+        st.session_state.page = "login"
+        st.rerun()
+
+# ---------------------------
+# Main App
+# ---------------------------
+def main():
+    if st.session_state.page == "register":
+        render_register()
+    elif st.session_state.page == "login":
+        render_login()
+    elif st.session_state.page == "dashboard":
+        if st.session_state.authenticated:
+            render_dashboard()
+        else:
+            st.session_state.page = "login"
+            st.rerun()
 
 if __name__ == "__main__":
     main()
