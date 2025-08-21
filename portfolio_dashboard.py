@@ -27,7 +27,7 @@ def main():
     if st.sidebar.button("Logout"):
         st.session_state.logged_in_user = None
         st.session_state.logged_in_username = None
-        st.experimental_rerun()
+        st.rerun()   # ✅ updated
 
     st.header("Your Portfolios")
 
@@ -59,7 +59,7 @@ def main():
             try:
                 tracker = portfolio_manager.create_portfolio(new_portfolio_name.strip(), current_user)
                 st.success(f"Portfolio '{new_portfolio_name}' created successfully.")
-                st.experimental_rerun()
+                st.rerun()   # ✅ updated
             except Exception as e:
                 st.error(f"Failed to create portfolio: {e}")
 
