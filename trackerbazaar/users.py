@@ -14,6 +14,8 @@ class UserManager:
         self._init_db()
         if "logged_in_user" not in st.session_state:
             st.session_state.logged_in_user = None
+        if "logged_in_username" not in st.session_state:
+            st.session_state.logged_in_username = None
 
     def _init_db(self):
         """Initialize SQLite database with users table and handle schema migration if needed."""
@@ -24,25 +26,31 @@ class UserManager:
                 cursor.execute("PRAGMA table_info(users)")
                 columns = {row[1] for row in cursor.fetchall()}
                 logger.info(f"Existing columns in users table: {columns}")
-                if not columns or "password_hash" not in columns:
-                    logger.info("Recreating users table due to missing password_hash column.")
+                if not columns or {"email", "password_hash", "username"} - columns:
+                    logger.info("Recreating users table due to missing columns.")
                     # Backup existing data if table exists
                     if columns:
-                        cursor.execute("SELECT email FROM users")
-                        existing_emails = [row[0] for row in cursor.fetchall()]
-                        if existing_emails:
-                            logger.warning(f"Backing up {len(existing_emails)} existing users before recreating table.")
+                        cursor.execute("SELECT email, username FROM users")
+                        existing_users = [(row[0], row[1] if row[1] else "") for row in cursor.fetchall()]
+                        if existing_users:
+                            logger.warning(f"Backing up {len(existing_users)} existing users before recreating table.")
                             backup_table = "users_backup_" + datetime.now().strftime("%Y%m%d_%H%M%S")
                             cursor.execute(f"ALTER TABLE users RENAME TO {backup_table}")
-                    # Recreate the table
+                    # Recreate the table with username
                     cursor.execute("""
                         CREATE TABLE users (
                             email TEXT PRIMARY KEY,
+                            username TEXT NOT NULL,
                             password_hash TEXT NOT NULL
                         )
                     """)
                     conn.commit()
-                    st.warning("Database schema recreated. Please re-signup with your email to set a new password.")
+                    # Restore backed-up data with empty username/password_hash if missing (users must re-signup)
+                    if existing_users:
+                        for email, username in existing_users:
+                            cursor.execute("INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)", 
+                                           (email, username if username else "", ""))
+                    st.warning("Database schema recreated. Please re-signup with your email and username to set a new password.")
                 else:
                     logger.info("Users table schema is correct.")
                 conn.commit()
@@ -57,28 +65,31 @@ class UserManager:
         """Render login form and handle authentication."""
         st.header("Login")
         email = st.text_input("Email", key="login_email")
+        username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login", key="login_submit"):
-            if not email or not password:
-                st.error("Email and password cannot be empty.")
+            if not email or not password or not username:
+                st.error("Email, username, and password cannot be empty.")
                 return
             try:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
+                    cursor.execute("SELECT password_hash, username FROM users WHERE email = ?", (email,))
                     result = cursor.fetchone()
                     if result:
+                        stored_hash, stored_username = result
                         try:
-                            if pbkdf2_sha256.verify(password, result[0]):
+                            if pbkdf2_sha256.verify(password, stored_hash) and username == stored_username:
                                 st.session_state.logged_in_user = email
-                                st.success(f"Logged in as {email}")
+                                st.session_state.logged_in_username = username
+                                st.success(f"Logged in as {username} ({email})")
                                 st.rerun()
                             else:
-                                st.error("Invalid email or password")
+                                st.error("Invalid email, username, or password")
                         except ValueError:
-                            st.error("Invalid password hash for this account. Please re-signup with this email to reset your password.")
+                            st.error("Invalid password hash for this account. Please re-signup with this email and username to reset your password.")
                     else:
-                        st.error("Invalid email or password")
+                        st.error("Invalid email, username, or password")
             except sqlite3.OperationalError as e:
                 logger.error(f"Database error during login: {e}")
                 st.error(f"Database error during login: {e}. Please try again or contact support.")
@@ -90,6 +101,7 @@ class UserManager:
         """Render logout button in sidebar for logged-in users."""
         if st.sidebar.button("Logout", key="logout_submit"):
             st.session_state.logged_in_user = None
+            st.session_state.logged_in_username = None
             st.session_state.portfolios = {}
             st.session_state.selected_portfolio = None
             st.success("Logged out successfully")
@@ -100,12 +112,13 @@ class UserManager:
         st.header("Sign Up")
         st.write("Create a new account to manage your portfolios.")
         new_email = st.text_input("New Email", key="signup_email")
+        new_username = st.text_input("New Username", key="signup_username")
         new_password = st.text_input("New Password", type="password", key="signup_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
         
         if st.button("Sign Up", key="signup_submit"):
-            if not new_email or not new_password:
-                st.error("Email and password cannot be empty.")
+            if not new_email or not new_username or not new_password:
+                st.error("Email, username, and password cannot be empty.")
                 return
             if new_password != confirm_password:
                 st.error("Passwords do not match.")
@@ -117,11 +130,17 @@ class UserManager:
                     if cursor.fetchone():
                         st.error("Email already registered. Please use a different email or log in.")
                         return
+                    cursor.execute("SELECT username FROM users WHERE username = ?", (new_username,))
+                    if cursor.fetchone():
+                        st.error("Username already taken. Please choose a different username.")
+                        return
                     password_hash = pbkdf2_sha256.hash(new_password)
-                    cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (new_email, password_hash))
+                    cursor.execute("INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)", 
+                                   (new_email, new_username, password_hash))
                     conn.commit()
                     st.session_state.logged_in_user = new_email
-                    st.success(f"Account created for {new_email}. You are now logged in.")
+                    st.session_state.logged_in_username = new_username
+                    st.success(f"Account created for {new_username} ({new_email}). You are now logged in.")
                     st.rerun()
             except sqlite3.OperationalError as e:
                 logger.error(f"Database error during signup: {e}")
@@ -137,3 +156,7 @@ class UserManager:
     def get_current_user(self):
         """Get the email of the currently logged-in user."""
         return st.session_state.logged_in_user
+
+    def get_current_username(self):
+        """Get the username of the currently logged-in user."""
+        return st.session_state.logged_in_username
