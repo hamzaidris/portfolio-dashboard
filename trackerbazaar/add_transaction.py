@@ -79,52 +79,53 @@ def render_add_transaction(tracker):
 def render_sample_distribution(tracker):
     st.subheader("Sample Distribution")
     with st.form("distribute_cash_form"):
-        date = st.date_input("Date", value=datetime(2025, 8, 21, 11, 38))
+        date = st.date_input("Date", value=datetime(2025, 8, 21, 12, 35))
         cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
         sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
         submit_calc = st.form_submit_button("Calculate Sample Distribution")
-    if submit_calc:
-        if cash <= 0.0:
-            st.error("Cash amount must be greater than 0.", icon="⚠️")
-            time.sleep(5)
-            st.rerun()
-        else:
-            if sharia_only:
-                sharia_allocations = {
-                    ticker: alloc for ticker, alloc in tracker.target_allocations.items()
-                    if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
-                }
-                if not sharia_allocations:
-                    st.error("No Sharia-compliant stocks with positive allocations.", icon="⚠️")
-                    time.sleep(5)
-                    st.rerun()
-                else:
-                    total_alloc = sum(sharia_allocations.values())
-                    if total_alloc == 0:
-                        st.error("Total allocation for Sharia-compliant stocks is 0.", icon="⚠️")
+        if submit_calc:
+            if cash <= 0.0:
+                st.error("Cash amount must be greater than 0.", icon="⚠️")
+                time.sleep(5)
+                st.rerun()
+            else:
+                if sharia_only:
+                    sharia_allocations = {
+                        ticker: alloc for ticker, alloc in tracker.target_allocations.items()
+                        if tracker.current_prices.get(ticker, {'sharia': False})['sharia'] and alloc > 0
+                    }
+                    if not sharia_allocations:
+                        st.error("No Sharia-compliant stocks with positive allocations.", icon="⚠️")
                         time.sleep(5)
                         st.rerun()
                     else:
-                        normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                        total_alloc = sum(sharia_allocations.values())
+                        if total_alloc == 0:
+                            st.error("Total allocation for Sharia-compliant stocks is 0.", icon="⚠️")
+                            time.sleep(5)
+                            st.rerun()
+                        else:
+                            normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in sharia_allocations.items()}
+                            temp_tracker = PortfolioTracker()
+                            temp_tracker.target_allocations = normalized_allocations
+                            temp_tracker.current_prices = tracker.current_prices
+                            dist_df = temp_tracker.calculate_distribution(cash)
+                            st.session_state.dist_df = dist_df
+                else:
+                    total_alloc = sum(tracker.target_allocations.values())
+                    if total_alloc == 0:
+                        st.error("Total allocation for stocks is 0.", icon="⚠️")
+                        time.sleep(5)
+                        st.rerun()
+                    else:
+                        normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in tracker.target_allocations.items() if alloc > 0}
                         temp_tracker = PortfolioTracker()
                         temp_tracker.target_allocations = normalized_allocations
                         temp_tracker.current_prices = tracker.current_prices
                         dist_df = temp_tracker.calculate_distribution(cash)
                         st.session_state.dist_df = dist_df
-                        st.write("Sample Distribution Results:")
-                        st.dataframe(dist_df)
-            else:
-                total_alloc = sum(tracker.target_allocations.values())
-                if total_alloc == 0:
-                    st.error("Total allocation for stocks is 0.", icon="⚠️")
-                    time.sleep(5)
-                    st.rerun()
-                else:
-                    normalized_allocations = {ticker: alloc / total_alloc * 100 for ticker, alloc in tracker.target_allocations.items() if alloc > 0}
-                    temp_tracker = PortfolioTracker()
-                    temp_tracker.target_allocations = normalized_allocations
-                    temp_tracker.current_prices = tracker.current_prices
-                    dist_df = temp_tracker.calculate_distribution(cash)
-                    st.session_state.dist_df = dist_df
-                    st.write("Sample Distribution Results:")
-                    st.dataframe(dist_df)
+
+    # Display the distribution table if it exists in session state
+    if 'dist_df' in st.session_state and st.session_state.dist_df is not None:
+        st.write("Sample Distribution Results:")
+        st.dataframe(st.session_state.dist_df)
