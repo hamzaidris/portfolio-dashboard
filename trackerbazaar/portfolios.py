@@ -55,10 +55,16 @@ class PortfolioManager:
                 tracker = PortfolioTracker()
                 data = json.loads(result[0])
                 tracker.transactions = [
-                    {**t, 'date': datetime.datetime.fromisoformat(t['date']) if isinstance(t['date'], str) else t['date']}
+                    {**t, 'date': datetime.fromisoformat(t['date']) if isinstance(t['date'], str) else t['date']}
                     for t in data.get('transactions', [])
                 ]
-                tracker.holdings = data.get('holdings', {})
+                tracker.holdings = {
+                    ticker: {
+                        **h,
+                        'purchase_date': datetime.fromisoformat(h['purchase_date']) if isinstance(h['purchase_date'], str) else h['purchase_date']
+                    }
+                    for ticker, h in data.get('holdings', {}).items()
+                }
                 tracker.dividends = data.get('dividends', {})
                 tracker.realized_gain = data.get('realized_gain', 0.0)
                 tracker.cash = data.get('cash', 0.0)
@@ -68,11 +74,11 @@ class PortfolioManager:
                 tracker.target_investment = data.get('target_investment', 410000.0)
                 tracker.last_div_per_share = data.get('last_div_per_share', {})
                 tracker.cash_deposits = [
-                    {**d, 'date': datetime.datetime.fromisoformat(d['date']) if isinstance(d['date'], str) else d['date']}
+                    {**d, 'date': datetime.fromisoformat(d['date']) if isinstance(d['date'], str) else d['date']}
                     for d in data.get('cash_deposits', [])
                 ]
                 tracker.alerts = [
-                    {**a, 'date': datetime.datetime.fromisoformat(a['date']) if isinstance(a['date'], str) else a['date']}
+                    {**a, 'date': datetime.fromisoformat(a['date']) if isinstance(a['date'], str) else a['date']}
                     for a in data.get('alerts', [])
                 ]
                 tracker.filer_status = data.get('filer_status', 'Filer')
@@ -131,7 +137,13 @@ class PortfolioManager:
                 {**t, 'date': t['date'].isoformat() if isinstance(t['date'], (datetime.datetime, datetime.date)) else t['date']}
                 for t in tracker.transactions
             ],
-            'holdings': tracker.holdings,
+            'holdings': {
+                ticker: {
+                    **h,
+                    'purchase_date': h['purchase_date'].isoformat() if isinstance(h['purchase_date'], (datetime.datetime, datetime.date)) else h['purchase_date']
+                }
+                for ticker, h in tracker.holdings.items()
+            },
             'dividends': tracker.dividends,
             'realized_gain': tracker.realized_gain,
             'cash': tracker.cash,
