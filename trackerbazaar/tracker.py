@@ -131,7 +131,7 @@ class PortfolioTracker:
 
         # Generate alert
         self.alerts.append({
-            'date': datetime.datetime.now(),
+            'date': datetime.now(),
             'message': f"{trans_type} {quantity:.2f} shares of {ticker} at PKR {price:.2f}"
         })
 
@@ -240,7 +240,7 @@ class PortfolioTracker:
             self.dividends[ticker] = 0.0
         self.dividends[ticker] += amount
         self.alerts.append({
-            'date': datetime.datetime.now(),
+            'date': datetime.now(),
             'message': f"Dividend of PKR {amount:.2f} added for {ticker}"
         })
 
