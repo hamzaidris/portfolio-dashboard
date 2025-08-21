@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 
@@ -21,10 +22,11 @@ def render_add_transaction(tracker):
         total_cost = price * quantity + fee
 
         if st.button("Add Transaction", key="add_trans_submit"):
-            if trans_type == "Buy" and tracker.cash_balance < total_cost:
+            cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
+            if trans_type == "Buy" and cash < total_cost:
                 st.error("Insufficient cash available for this transaction.", icon="⚠️")
                 st.success("Please add cash or adjust the transaction.", icon="ℹ️")
-                time.sleep(5)  # Display message for 5 seconds
+                time.sleep(5)
                 st.rerun()
             else:
                 try:
@@ -34,11 +36,11 @@ def render_add_transaction(tracker):
                     else:
                         st.success("Transaction has been added", icon="✅")
                     st.session_state.data_changed = True
-                    time.sleep(5)  # Display message for 5 seconds
+                    time.sleep(5)
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e), icon="⚠️")
-                    time.sleep(5)  # Display error for 5 seconds
+                    time.sleep(5)
                     st.rerun()
     else:
         amount = st.number_input("Amount (PKR)", min_value=0.0, step=1.0, key="add_trans_amount")
@@ -49,17 +51,17 @@ def render_add_transaction(tracker):
                 tracker.add_transaction(date, None, trans_type, amount, 0.0, fee)
                 st.success("Cash has been added" if trans_type == "Deposit" else "Transaction has been added", icon="✅")
                 st.session_state.data_changed = True
-                time.sleep(5)  # Display message for 5 seconds
+                time.sleep(5)
                 st.rerun()
             except ValueError as e:
                 st.error(str(e), icon="⚠️")
-                time.sleep(5)  # Display error for 5 seconds
+                time.sleep(5)
                 st.rerun()
 
 def render_sample_distribution(tracker):
     st.subheader("Sample Distribution")
     with st.form("distribute_cash_form"):
-        date = st.date_input("Date", value=datetime(2025, 8, 21, 11, 23))
+        date = st.date_input("Date", value=datetime(2025, 8, 21, 11, 34))
         cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
         sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
         submit_calc = st.form_submit_button("Calculate Sample Distribution")
@@ -109,6 +111,3 @@ def render_sample_distribution(tracker):
                 },
                 use_container_width=True
             )
-
-# Note: Import time for sleep functionality
-import time
