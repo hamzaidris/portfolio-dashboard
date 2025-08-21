@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from .tracker import Tracker
+from .tracker import Tracker   # adjusted import
 
 DB = "trackerbazaar.db"
 
@@ -10,40 +10,50 @@ class PortfolioManager:
         self._ensure_db()
 
     def _ensure_db(self):
-        """Always ensure portfolios table exists."""
+        """Ensure the portfolios table exists."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS portfolios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     email TEXT NOT NULL,
                     name TEXT NOT NULL,
-                    data TEXT NOT NULL,
-                    PRIMARY KEY (email, name)
+                    data TEXT,
+                    UNIQUE(email, name)
                 )
                 """
             )
             conn.commit()
 
     def create_portfolio(self, name, email):
-        self._ensure_db()
-        tracker = Tracker()
+        """Create a new portfolio for the given user."""
+        tracker = Tracker()  # start fresh
         self.save_portfolio(name, email, tracker)
         return tracker
 
     def save_portfolio(self, name, email, tracker):
-        self._ensure_db()
-        tracker_data = json.dumps(tracker.to_dict(), ensure_ascii=False)
+        """Save or replace a portfolio."""
+        tracker_data = json.dumps(tracker.to_dict())
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
-                "REPLACE INTO portfolios(email, name, data) VALUES (?,?,?)",
-                (email, name, tracker_data),
+                """
+                INSERT OR REPLACE INTO portfolios (id, email, name, data)
+                VALUES (
+                    COALESCE(
+                        (SELECT id FROM portfolios WHERE email=? AND name=?),
+                        NULL
+                    ),
+                    ?, ?, ?
+                )
+                """,
+                (email, name, email, name, tracker_data),
             )
             conn.commit()
 
     def load_portfolio(self, name, email):
-        self._ensure_db()
+        """Load a portfolio and return Tracker object."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
@@ -51,16 +61,13 @@ class PortfolioManager:
                 (email, name),
             )
             row = c.fetchone()
-            if row:
-                try:
-                    data = json.loads(row[0])
-                    return Tracker.from_dict(data)
-                except Exception:
-                    return Tracker()
-            return Tracker()
+        if row:
+            data = json.loads(row[0])
+            return Tracker.from_dict(data)
+        return Tracker()
 
     def list_portfolios(self, email):
-        self._ensure_db()
+        """List all portfolio names for a given user."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
@@ -68,4 +75,4 @@ class PortfolioManager:
                 (email,),
             )
             rows = c.fetchall()
-            return [r[0] for r in rows] if rows else []
+        return [r[0] for r in rows]
