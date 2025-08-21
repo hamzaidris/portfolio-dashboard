@@ -1,8 +1,8 @@
 # trackerbazaar/portfolios.py
 import sqlite3
 import json
-from .tracker import PortfolioTracker  # ✅ relative import
-from .data import DB_FILE              # ✅ use v2 DB from data.py
+from trackerbazaar.tracker import PortfolioTracker   # ✅ absolute import
+from trackerbazaar.data import DB_FILE               # ✅ consistent DB file
 
 class PortfolioManager:
     def __init__(self):
