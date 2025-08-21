@@ -1,78 +1,72 @@
-import os, json
-from datetime import datetime, timezone
+# trackerbazaar/data.py
+"""
+Centralized configuration and constants for TrackerBazaar.
+This ensures consistent references across all modules.
+"""
 
-def _read_json(paths):
-    for p in paths:
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            continue
-    return {}
+import os
 
-def _read_lines(paths):
-    lines = []
-    for p in paths:
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                for line in f:
-                    s = line.strip()
-                    if s:
-                        lines.append(s)
-            return lines
-        except Exception:
-            continue
-    return lines
+# Database file (consistent for v2)
+DB_FILE = os.path.join(os.path.dirname(__file__), "trackerbazaar_v2.db")
 
-def load_psx_data(project_root=None):
-    """Return a dict: {symbol: {price: float, sharia: bool, ...}}"""
-    here = os.path.dirname(__file__)
-    roots = [project_root or os.path.dirname(here), here]
-    json_paths = [os.path.join(r, "market-data.json") for r in roots]
-    kmi_paths  = [os.path.join(r, "kmi_shares.txt") for r in roots]
+# Default currency
+DEFAULT_CURRENCY = "PKR"
 
-    raw = _read_json(json_paths) or {}
-    sharia_list = set([x.strip().upper() for x in _read_lines(kmi_paths)])
+# Table names (to avoid typos)
+TABLES = {
+    "users": "users",
+    "portfolios": "portfolios",
+    "transactions": "transactions",
+    "dividends": "dividends",
+    "cash": "cash",
+}
 
-    data = {}
-    data_section = raw.get("data") if isinstance(raw, dict) else {}
-    if isinstance(data_section, dict):
-        for _mkt, stocks in data_section.items():
-            if not isinstance(stocks, dict):
-                continue
-            for sym, item in stocks.items():
-                if not isinstance(item, dict):
-                    continue
-                price = item.get("price")
-                try:
-                    price = float(price)
-                except Exception:
-                    continue
-                ts = item.get("timestamp")
-                if ts:
-                    try:
-                        dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
-                        iso_ts = dt.isoformat()
-                    except Exception:
-                        iso_ts = datetime.now(timezone.utc).isoformat()
-                else:
-                    iso_ts = datetime.now(timezone.utc).isoformat()
-
-                data[sym.upper()] = {
-                    "price": price,
-                    "change": item.get("change"),
-                    "changePercent": item.get("changePercent"),
-                    "volume": item.get("volume", 0),
-                    "trades": item.get("trades", 0),
-                    "value": item.get("value", 0),
-                    "high": item.get("high", 0),
-                    "low": item.get("low", 0),
-                    "timestamp": iso_ts,
-                    "sharia": sym.upper() in sharia_list,
-                }
-    return data
-
-def get_price(symbol, prices):
-    if not symbol:
-        return None
-    return (prices or {}).get(symbol.upper(), {}).get("price")
+# SQL schema definitions
+SCHEMA = {
+    "users": """
+        CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL
+        )
+    """,
+    "portfolios": """
+        CREATE TABLE IF NOT EXISTS portfolios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            owner_email TEXT NOT NULL,
+            FOREIGN KEY (owner_email) REFERENCES users(email)
+        )
+    """,
+    "transactions": """
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            portfolio_id INTEGER,
+            ticker TEXT NOT NULL,
+            type TEXT CHECK(type IN ('BUY','SELL')) NOT NULL,
+            quantity INTEGER NOT NULL,
+            price REAL NOT NULL,
+            date TEXT NOT NULL,
+            FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+        )
+    """,
+    "dividends": """
+        CREATE TABLE IF NOT EXISTS dividends (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            portfolio_id INTEGER,
+            ticker TEXT NOT NULL,
+            amount REAL NOT NULL,
+            date TEXT NOT NULL,
+            FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+        )
+    """,
+    "cash": """
+        CREATE TABLE IF NOT EXISTS cash (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            portfolio_id INTEGER,
+            amount REAL NOT NULL,
+            type TEXT CHECK(type IN ('DEPOSIT','WITHDRAW')) NOT NULL,
+            date TEXT NOT NULL,
+            FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+        )
+    """,
+}
