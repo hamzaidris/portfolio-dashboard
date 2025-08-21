@@ -4,7 +4,7 @@ import sqlite3
 from trackerbazaar.data import DB_FILE
 
 class PortfolioTracker:
-    """Basic tracker stub — extend as needed."""
+    """Basic portfolio tracker"""
 
     def __init__(self):
         self.db_path = DB_FILE
