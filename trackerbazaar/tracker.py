@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+import datetime
 from trackerbazaar.data import load_psx_data, excel_date_to_datetime
 
 def initialize_tracker(tracker):
@@ -41,7 +41,7 @@ class PortfolioTracker:
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a transaction to the portfolio."""
-        import datetime  # Local import to ensure no shadowing
+        import datetime
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
         if not isinstance(date, (datetime.datetime, datetime.date)):
@@ -134,6 +134,49 @@ class PortfolioTracker:
             'date': datetime.datetime.now(),
             'message': f"{trans_type} {quantity:.2f} shares of {ticker} at PKR {price:.2f}"
         })
+
+    def get_invested_timeline(self):
+        """Return a DataFrame with the cumulative invested capital over time."""
+        timeline = []
+        cumulative_invested = 0.0
+
+        # Combine transactions and cash deposits for timeline
+        events = []
+        for trans in self.transactions:
+            events.append({
+                'date': trans['date'],
+                'type': trans['type'],
+                'amount': trans['total'] if trans['type'] in ['Buy', 'Deposit'] else -trans['total']
+            })
+        for deposit in self.cash_deposits:
+            events.append({
+                'date': deposit['date'],
+                'type': 'Deposit',
+                'amount': deposit['amount']
+            })
+
+        # Sort events by date
+        events.sort(key=lambda x: x['date'])
+
+        # Calculate cumulative invested amount
+        for event in events:
+            if event['type'] in ['Buy', 'Deposit']:
+                cumulative_invested += event['amount']
+            elif event['type'] == 'Sell':
+                cumulative_invested += event['amount']  # Negative amount reduces invested capital
+            # Skip Withdraw transactions as they affect cash but not invested capital
+            timeline.append({
+                'date': event['date'],
+                'invested': max(cumulative_invested, 0.0)  # Ensure non-negative
+            })
+
+        # Convert to DataFrame and ensure unique dates
+        df = pd.DataFrame(timeline)
+        if not df.empty:
+            df = df.groupby('date', as_index=False).last()  # Keep last entry for each date
+            df['date'] = pd.to_datetime(df['date'])  # Ensure date is datetime
+            df = df.sort_values('date')  # Sort by date
+        return df if not df.empty else pd.DataFrame(columns=['date', 'invested'])
 
     def get_cash_summary(self):
         """Return a DataFrame summarizing cash transactions."""
