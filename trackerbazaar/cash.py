@@ -1,55 +1,28 @@
+# trackerbazaar/cash.py
+
 import streamlit as st
-from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
+from trackerbazaar.tracker import PortfolioTracker   # ✅ correct import
 
 
-def show_cash_ui(current_user):
-    st.title("💰 Portfolio Cash Manager")
+def cash_ui():
+    """Streamlit UI for managing cash in a portfolio."""
+    st.header("💵 Manage Cash")
 
-    if not current_user:
-        st.warning("Please log in to manage cash.")
-        return
+    tracker = PortfolioTracker()
 
-    pm = PortfolioManager()
-    portfolios = pm.list_portfolios(current_user)
+    with st.form("cash_form"):
+        portfolio_id = st.text_input("Portfolio ID")
+        amount = st.number_input("Cash Amount", min_value=0.0, step=0.01)
+        transaction_type = st.selectbox("Transaction Type", ["Deposit", "Withdrawal"])
 
-    if not portfolios:
-        st.info("No portfolios found. Please create one first.")
-        return
+        submitted = st.form_submit_button("Add Cash Transaction")
 
-    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
-
-    tracker = pm.load_portfolio(selected_portfolio, current_user)
-    if not tracker:
-        st.error("Failed to load portfolio.")
-        return
-
-    # ---- Current Balance ----
-    balance = tracker.get_cash_balance()
-    st.metric("Current Cash Balance", f"PKR {balance:,.2f}")
-
-    # ---- Deposit / Withdraw ----
-    st.markdown("### Manage Cash")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        deposit_amount = st.number_input("Deposit Amount", min_value=0.0, step=100.0)
-        if st.button("➕ Deposit"):
+        if submitted:
             try:
-                tracker.deposit_cash(deposit_amount)
-                pm.save_portfolio(selected_portfolio, current_user, tracker)
-                st.success(f"Deposited PKR {deposit_amount:,.2f}")
-                st.rerun()
+                if transaction_type == "Deposit":
+                    tracker.add_cash(portfolio_id, amount)
+                else:
+                    tracker.withdraw_cash(portfolio_id, amount)
+                st.success(f"✅ {transaction_type} successful!")
             except Exception as e:
-                st.error(f"Failed to deposit: {e}")
-
-    with col2:
-        withdraw_amount = st.number_input("Withdraw Amount", min_value=0.0, step=100.0)
-        if st.button("➖ Withdraw"):
-            try:
-                tracker.withdraw_cash(withdraw_amount)
-                pm.save_portfolio(selected_portfolio, current_user, tracker)
-                st.success(f"Withdrew PKR {withdraw_amount:,.2f}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to withdraw: {e}")
+                st.error(f"❌ Failed to process transaction: {e}")
