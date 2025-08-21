@@ -1,118 +1,61 @@
-import sqlite3
-import logging
-import json
+import sqlite3, json
+from .tracker import PortfolioTracker
 
-# Import tracker types to allow optional creation/initialization
-from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
+DB = "trackerbazaar.db"
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-DEFAULT_DB_PATH = "trackerbazaar.db"
-
-def _tracker_to_dict(tracker):
-    """Serialize key fields of the tracker safely for storage."""
-    fields = [
-        "transactions", "holdings", "dividends", "realized_gain", "cash", "initial_cash",
-        "current_prices", "target_allocations", "target_investment", "last_div_per_share",
-        "cash_deposits", "alerts", "filer_status", "broker_fees"
-    ]
-    out = {}
-    for f in fields:
-        out[f] = getattr(tracker, f, None)
-    return out
+def _init_portfolios():
+    with sqlite3.connect(DB) as conn:
+        c = conn.cursor()
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS portfolios (
+            email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            data TEXT NOT NULL,
+            PRIMARY KEY(email, name)
+        )
+        """)
+        conn.commit()
 
 class PortfolioManager:
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
-        self.db_path = db_path
-        self._init_db()
+    def __init__(self):
+        _init_portfolios()
 
-    def _init_db(self):
-        """Initialize the SQLite database for portfolios."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """CREATE TABLE IF NOT EXISTS portfolios (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_email TEXT NOT NULL,
-                        portfolio_name TEXT NOT NULL,
-                        data TEXT NOT NULL,
-                        UNIQUE(user_email, portfolio_name)
-                    )"""
-                )
-                conn.commit()
-        except sqlite3.OperationalError as e:
-            logger.error(f"Database init error: {e}")
-
-    def save_portfolio(self, portfolio_name, user_email, tracker):
-        """Upsert a portfolio for a user."""
-        try:
-            data_json = json.dumps(_tracker_to_dict(tracker))
-            with sqlite3.connect(self.db_path) as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """UPDATE portfolios SET data=?
-                       WHERE user_email=? AND portfolio_name=?""",
-                    (data_json, user_email, portfolio_name)
-                )
-                if cur.rowcount == 0:
-                    cur.execute(
-                        """INSERT INTO portfolios(user_email, portfolio_name, data)
-                           VALUES (?,?,?)""",
-                        (user_email, portfolio_name, data_json)
-                    )
-                conn.commit()
-            return True
-        except sqlite3.OperationalError as e:
-            logger.error(f"Database error saving portfolio: {e}")
-            return False
-
-    def get_portfolio(self, portfolio_name, user_email):
-        """Return the stored portfolio JSON as a dict, or None."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """SELECT data FROM portfolios
-                       WHERE user_email=? AND portfolio_name=?""",
-                    (user_email, portfolio_name)
-                )
-                row = cur.fetchone()
-                if not row:
-                    return None
-                return json.loads(row[0])
-        except sqlite3.OperationalError as e:
-            logger.error(f"Database error reading portfolio: {e}")
+    def create_portfolio(self, name: str, email: str):
+        if not (name and email):
             return None
+        tracker = PortfolioTracker()
+        self.save_portfolio(name, email, tracker)
+        return tracker
 
-    def list_portfolios(self, user_email):
-        """List portfolio names for the given user."""
+    def save_portfolio(self, name: str, email: str, tracker: PortfolioTracker):
+        with sqlite3.connect(DB) as conn:
+            c = conn.cursor()
+            c.execute("REPLACE INTO portfolios(email, name, data) VALUES(?,?,?)", (email, name, json.dumps(tracker.to_dict())))
+            conn.commit()
+
+    def load_portfolio(self, name: str, email: str):
+        with sqlite3.connect(DB) as conn:
+            c = conn.cursor()
+            c.execute("SELECT data FROM portfolios WHERE email=? AND name=?", (email, name))
+            row = c.fetchone()
+        if not row:
+            return None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """SELECT portfolio_name FROM portfolios
-                       WHERE user_email=? ORDER BY portfolio_name""",
-                    (user_email,)
-                )
-                return [r[0] for r in cur.fetchall()]
-        except sqlite3.OperationalError as e:
-            logger.error(f"Database error listing portfolios: {e}")
-            return []
+            data = json.loads(row[0])
+        except Exception:
+            data = {}
+        return PortfolioTracker.from_dict(data)
 
-    def create_portfolio(self, portfolio_name, user_email, tracker=None):
-        """
-        Create a new portfolio for the user.
-        If tracker is not provided, create and initialize a fresh PortfolioTracker.
-        This keeps compatibility with 2-arg call sites.
-        """
-        if tracker is None:
-            tracker = PortfolioTracker()
-            try:
-                initialize_tracker(tracker)
-            except Exception:
-                # Ensure the object remains usable even if initialization fails
-                pass
+    def list_portfolios(self, email: str):
+        with sqlite3.connect(DB) as conn:
+            c = conn.cursor()
+            c.execute("SELECT name FROM portfolios WHERE email=? ORDER BY name", (email,))
+            return [r[0] for r in c.fetchall()]
 
-        return self.save_portfolio(portfolio_name, user_email, tracker)
+    def select_portfolio(self, email: str, name: str = None):
+        if name:
+            return self.load_portfolio(name, email)
+        names = self.list_portfolios(email)
+        if names:
+            return self.load_portfolio(names[0], email)
+        return None
