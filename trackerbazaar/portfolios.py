@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import json
+from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 
 class PortfolioManager:
@@ -36,22 +37,7 @@ class PortfolioManager:
             if cursor.fetchone():
                 return None
             tracker = PortfolioTracker()
-            portfolio_data = json.dumps({
-                'transactions': tracker.transactions,
-                'holdings': tracker.holdings,
-                'dividends': tracker.dividends,
-                'realized_gain': tracker.realized_gain,
-                'cash': tracker.cash,
-                'initial_cash': tracker.initial_cash,
-                'current_prices': tracker.current_prices,
-                'target_allocations': tracker.target_allocations,
-                'target_investment': tracker.target_investment,
-                'last_div_per_share': tracker.last_div_per_share,
-                'cash_deposits': tracker.cash_deposits,
-                'alerts': tracker.alerts,
-                'filer_status': tracker.filer_status,
-                'broker_fees': tracker.broker_fees
-            })
+            portfolio_data = self._serialize_portfolio(tracker)
             cursor.execute("INSERT INTO portfolios (email, portfolio_name, portfolio_data) VALUES (?, ?, ?)", (email, name, portfolio_data))
             conn.commit()
             st.session_state.portfolios[name] = tracker
@@ -68,7 +54,10 @@ class PortfolioManager:
             if result:
                 tracker = PortfolioTracker()
                 data = json.loads(result[0])
-                tracker.transactions = data.get('transactions', [])
+                tracker.transactions = [
+                    {**t, 'date': datetime.fromisoformat(t['date']) if isinstance(t['date'], str) else t['date']}
+                    for t in data.get('transactions', [])
+                ]
                 tracker.holdings = data.get('holdings', {})
                 tracker.dividends = data.get('dividends', {})
                 tracker.realized_gain = data.get('realized_gain', 0.0)
@@ -78,8 +67,14 @@ class PortfolioManager:
                 tracker.target_allocations = data.get('target_allocations', {})
                 tracker.target_investment = data.get('target_investment', 410000.0)
                 tracker.last_div_per_share = data.get('last_div_per_share', {})
-                tracker.cash_deposits = data.get('cash_deposits', [])
-                tracker.alerts = data.get('alerts', [])
+                tracker.cash_deposits = [
+                    {**d, 'date': datetime.fromisoformat(d['date']) if isinstance(d['date'], str) else d['date']}
+                    for d in data.get('cash_deposits', [])
+                ]
+                tracker.alerts = [
+                    {**a, 'date': datetime.fromisoformat(a['date']) if isinstance(a['date'], str) else a['date']}
+                    for a in data.get('alerts', [])
+                ]
                 tracker.filer_status = data.get('filer_status', 'Filer')
                 tracker.broker_fees = data.get('broker_fees', {
                     'low_price_fee': 0.03,
@@ -120,8 +115,22 @@ class PortfolioManager:
         """Save the portfolio to the database."""
         if not email or not name:
             return
-        portfolio_data = json.dumps({
-            'transactions': tracker.transactions,
+        portfolio_data = self._serialize_portfolio(tracker)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO portfolios (email, portfolio_name, portfolio_data)
+                VALUES (?, ?, ?)
+            """, (email, name, portfolio_data))
+            conn.commit()
+
+    def _serialize_portfolio(self, tracker):
+        """Serialize PortfolioTracker data to JSON, converting datetime to strings."""
+        return json.dumps({
+            'transactions': [
+                {**t, 'date': t['date'].isoformat() if isinstance(t['date'], (datetime, date)) else t['date']}
+                for t in tracker.transactions
+            ],
             'holdings': tracker.holdings,
             'dividends': tracker.dividends,
             'realized_gain': tracker.realized_gain,
@@ -131,15 +140,14 @@ class PortfolioManager:
             'target_allocations': tracker.target_allocations,
             'target_investment': tracker.target_investment,
             'last_div_per_share': tracker.last_div_per_share,
-            'cash_deposits': tracker.cash_deposits,
-            'alerts': tracker.alerts,
+            'cash_deposits': [
+                {**d, 'date': d['date'].isoformat() if isinstance(d['date'], (datetime, date)) else d['date']}
+                for d in tracker.cash_deposits
+            ],
+            'alerts': [
+                {**a, 'date': a['date'].isoformat() if isinstance(a['date'], (datetime, date)) else a['date']}
+                for a in tracker.alerts
+            ],
             'filer_status': tracker.filer_status,
             'broker_fees': tracker.broker_fees
         })
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO portfolios (email, portfolio_name, portfolio_data)
-                VALUES (?, ?, ?)
-            """, (email, name, portfolio_data))
-            conn.commit()
