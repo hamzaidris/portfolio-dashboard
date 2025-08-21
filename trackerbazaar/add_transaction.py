@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
+
 
 def render_add_transaction(tracker, portfolio_manager, username):
     st.header("Add Transaction")
@@ -24,7 +24,7 @@ def render_add_transaction(tracker, portfolio_manager, username):
             except Exception as e:
                 st.error(f"Error adding transaction: {e}")
 
-'''def render_add_transaction(tracker):
+def render_add_transaction(tracker):
     portfolio_manager = PortfolioManager()
     email = st.session_state.get('logged_in_user')
     portfolio_name = st.session_state.get('selected_portfolio')
@@ -161,4 +161,4 @@ def render_sample_distribution(tracker):
     # Display the distribution table if it exists in session state
     if 'dist_df' in st.session_state and st.session_state.dist_df is not None:
         st.write("Sample Distribution Results:")
-        st.dataframe(st.session_state.dist_df)'''
+        st.dataframe(st.session_state.dist_df)
