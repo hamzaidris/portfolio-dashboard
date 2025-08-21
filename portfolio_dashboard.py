@@ -16,7 +16,7 @@ from trackerbazaar.guide import render_guide
 from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
 from trackerbazaar.users import UserManager
 from trackerbazaar.portfolios import PortfolioManager
-import datetime
+from datetime import datetime
 
 # Add parent directory to sys.path for package resolution
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
