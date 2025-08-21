@@ -1,60 +1,34 @@
-# add_dividend.py
 import streamlit as st
-import pandas as pd
 from trackerbazaar.portfolios import PortfolioManager
+from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
+from trackerbazaar.data import DB_FILE
 
-portfolio_manager = PortfolioManager()
 
-def show_add_dividend(selected_portfolio: str, user_email: str):
-    """Modern UI for adding and viewing dividends of a portfolio."""
+def add_dividend_ui(current_user):
+    st.subheader("💰 Add Dividend")
 
-    try:
-        tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
-    except Exception as e:
-        st.error(f"Error loading portfolio: {e}")
+    if not current_user:
+        st.warning("Please log in to add dividends.")
         return
 
-    st.subheader(f"💰 Dividends — {selected_portfolio}")
+    pm = PortfolioManager()
+    portfolios = pm.list_portfolios(current_user)
 
-    # ---- Add Dividend ----
-    with st.expander("➕ Add Dividend", expanded=False):
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            stock = st.text_input("Stock Symbol", placeholder="e.g., MCB")
-        with col2:
-            amount = st.number_input("Dividend Amount (PKR)", min_value=0.0, step=10.0)
-        with col3:
-            if st.button("Add Dividend", type="primary", use_container_width=True):
-                try:
-                    tracker.add_dividend(stock, amount)
-                    portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
-                    st.success(f"Dividend of PKR {amount:,.2f} added for {stock} ✅")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to add dividend: {e}")
+    if not portfolios:
+        st.info("No portfolios found. Please create one first.")
+        return
 
-    st.divider()
+    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
+    dividend_date = st.date_input("Dividend Date")
+    stock_symbol = st.text_input("Stock Symbol")
+    dividend_amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
 
-    # ---- Dividend History ----
-    if not tracker.dividends:
-        st.info("No dividends recorded yet.")
-    else:
-        df = pd.DataFrame(tracker.dividends)
-        st.dataframe(df, use_container_width=True)
-
-        # ---- Dividend Summary ----
-        total_dividends = df["amount"].sum()
-        st.metric("Total Dividends Received", f"PKR {total_dividends:,.2f}")
-
-        # ---- Grouped View ----
-        grouped = df.groupby("stock")["amount"].sum().reset_index()
-        st.bar_chart(grouped.set_index("stock"))
-
-        # ---- Download Option ----
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download Dividend History as CSV",
-            data=csv,
-            file_name=f"{selected_portfolio}_dividends.csv",
-            mime="text/csv",
-        )
+    if st.button("Add Dividend"):
+        tracker = pm.load_portfolio(selected_portfolio, current_user)
+        if tracker:
+            tracker.add_dividend(stock_symbol, dividend_amount, str(dividend_date))
+            pm.save_portfolio(selected_portfolio, current_user, tracker)
+            st.success(f"Dividend added for {stock_symbol} on {dividend_date}")
+            st.rerun()  # ✅ modern rerun API
+        else:
+            st.error("Failed to load portfolio.")
