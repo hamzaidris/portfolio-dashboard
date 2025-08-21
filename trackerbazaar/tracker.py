@@ -41,9 +41,10 @@ class PortfolioTracker:
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a transaction to the portfolio."""
+        import datetime  # Local import to ensure no shadowing
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
-        if not isinstance(date, (datetime, datetime.date)):
+        if not isinstance(date, (datetime.datetime, datetime.date)):
             raise ValueError("Invalid date format")
         if trans_type not in ["Buy", "Sell", "Deposit", "Withdraw"]:
             raise ValueError("Invalid transaction type")
@@ -83,7 +84,7 @@ class PortfolioTracker:
 
             # Generate alert
             self.alerts.append({
-                'date': datetime.now(),
+                'date': datetime.datetime.now(),
                 'message': f"{trans_type} of PKR {quantity:.2f} processed"
             })
             return
@@ -130,7 +131,7 @@ class PortfolioTracker:
 
         # Generate alert
         self.alerts.append({
-            'date': datetime.now(),
+            'date': datetime.datetime.now(),
             'message': f"{trans_type} {quantity:.2f} shares of {ticker} at PKR {price:.2f}"
         })
 
@@ -164,7 +165,7 @@ class PortfolioTracker:
             self.dividends[ticker] = 0.0
         self.dividends[ticker] += amount
         self.alerts.append({
-            'date': datetime.now(),
+            'date': datetime.datetime.now(),
             'message': f"Dividend of PKR {amount:.2f} added for {ticker}"
         })
 
