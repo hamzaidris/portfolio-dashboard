@@ -2,7 +2,7 @@ import streamlit as st
 from trackerbazaar.users import UserManager
 from trackerbazaar.portfolios import PortfolioManager
 from trackerbazaar.tracker import initialize_tracker
-from trackerbazaar.add_transaction import render_add_transaction
+from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
 from trackerbazaar.cash import render_cash
 from trackerbazaar.portfolio import render_portfolio
 from trackerbazaar.dashboard import render_dashboard
@@ -74,7 +74,7 @@ def main():
     pages = {
         "Portfolio": render_portfolio,
         "Dashboard": render_dashboard,
-        "Add Transaction": render_add_transaction,
+        "Add Transaction": lambda t: [render_add_transaction(t), render_sample_distribution(t)],
         "Cash": render_cash,
         "Stock Explorer": render_stock_explorer,
         "Notifications": lambda t: st.write("Notifications page (under development)"),
