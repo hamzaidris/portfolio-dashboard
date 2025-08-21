@@ -39,9 +39,10 @@ class UserManager:
                     # Recreate the table with username
                     cursor.execute("""
                         CREATE TABLE users (
-                            email TEXT PRIMARY KEY,
+                            email TEXT NOT NULL,
                             username TEXT NOT NULL,
-                            password_hash TEXT NOT NULL
+                            password_hash TEXT NOT NULL,
+                            PRIMARY KEY (email)
                         )
                     """)
                     conn.commit()
@@ -62,34 +63,34 @@ class UserManager:
             st.error(f"Unexpected error initializing database: {e}. Please try again later.")
 
     def login(self):
-        """Render login form and handle authentication."""
+        """Render login form and handle authentication using either email or username."""
         st.header("Login")
-        email = st.text_input("Email", key="login_email")
-        username = st.text_input("Username", key="login_username")
+        identifier = st.text_input("Email or Username", key="login_identifier")
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login", key="login_submit"):
-            if not email or not password or not username:
-                st.error("Email, username, and password cannot be empty.")
+            if not identifier or not password:
+                st.error("Identifier and password cannot be empty.")
                 return
             try:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT password_hash, username FROM users WHERE email = ?", (email,))
+                    # Check if identifier is an email or username
+                    cursor.execute("SELECT password_hash, username, email FROM users WHERE email = ? OR username = ?", (identifier, identifier))
                     result = cursor.fetchone()
                     if result:
-                        stored_hash, stored_username = result
+                        stored_hash, stored_username, stored_email = result
                         try:
-                            if pbkdf2_sha256.verify(password, stored_hash) and username == stored_username:
-                                st.session_state.logged_in_user = email
-                                st.session_state.logged_in_username = username
-                                st.success(f"Logged in as {username} ({email})")
+                            if pbkdf2_sha256.verify(password, stored_hash):
+                                st.session_state.logged_in_user = stored_email
+                                st.session_state.logged_in_username = stored_username
+                                st.success(f"Logged in as {stored_username} ({stored_email})")
                                 st.rerun()
                             else:
-                                st.error("Invalid email, username, or password")
+                                st.error("Invalid identifier or password")
                         except ValueError:
                             st.error("Invalid password hash for this account. Please re-signup with this email and username to reset your password.")
                     else:
-                        st.error("Invalid email, username, or password")
+                        st.error("Invalid identifier or password")
             except sqlite3.OperationalError as e:
                 logger.error(f"Database error during login: {e}")
                 st.error(f"Database error during login: {e}. Please try again or contact support.")
