@@ -1,83 +1,126 @@
+# portfolio_dashboard.py
 import streamlit as st
-from trackerbazaar.users import UserManager
-from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.tracker import Tracker
-from trackerbazaar import trade_manager, dividends, cash, dashboard, fire_tracker
+from trackerbazaar import (
+    users,
+    portfolios,
+    transactions,
+    dividends,
+    cash,
+    dashboard,
+    stock_explorer,
+    guide,
+)
 
+# ----------------------------
+# Initialize Managers
+# ----------------------------
+user_manager = users.UserManager()
+portfolio_manager = portfolios.PortfolioManager()
+
+# ----------------------------
+# Main App
+# ----------------------------
 def main():
-    st.set_page_config(page_title="TrackerBazaar", layout="wide")
-    st.title("📊 TrackerBazaar – Portfolio Dashboard")
+    st.set_page_config(
+        page_title="TrackerBazaar",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
-    user_manager = UserManager()
-    portfolio_manager = PortfolioManager()
+    # Sidebar: Authentication
+    with st.sidebar:
+        st.title("🔑 Account")
+        if not user_manager.is_logged_in():
+            choice = st.radio("Login / Signup", ["Login", "Signup"])
+            if choice == "Login":
+                user_manager.login()
+            else:
+                user_manager.signup()
+            return
+        else:
+            st.success(f"Welcome, {st.session_state.logged_in_username} 👋")
+            if st.button("Logout"):
+                user_manager.logout()
+                st.rerun()
 
+    # Sidebar: Portfolio selection
     current_user = user_manager.get_current_user()
+    portfolios_list = portfolio_manager.list_portfolios(current_user)
 
-    if not current_user:
-        tab1, tab2 = st.tabs(["Login", "Signup"])
-        with tab1: 
-            user_manager.login()
-        with tab2: 
-            user_manager.signup()
-        return
+    with st.sidebar:
+        st.title("📂 Portfolios")
+        if portfolios_list:
+            selected_portfolio = st.selectbox(
+                "Select Portfolio", portfolios_list, index=0
+            )
+            st.session_state.selected_portfolio = selected_portfolio
+        else:
+            st.info("No portfolios yet. Create one below.")
+            st.session_state.selected_portfolio = None
 
-    # Sidebar
-    st.sidebar.write(f"Welcome, {st.session_state.logged_in_username} 👋")
-    if st.sidebar.button("Logout"):
-        user_manager.logout()
-        st.rerun()
-
-    # Portfolios
-    st.subheader("Your Portfolios")
-
-    try:
-        portfolios = portfolio_manager.list_portfolios(current_user)
-    except Exception as e:
-        st.error(f"Database error while loading portfolios: {e}")
-        portfolios = []
-
-    portfolio_name = st.selectbox("Select Portfolio", portfolios) if portfolios else None
-
-    with st.expander("Create New Portfolio"):
-        new_portfolio_name = st.text_input("Portfolio Name")
+        new_name = st.text_input("➕ New Portfolio Name")
         if st.button("Create Portfolio"):
-            if new_portfolio_name.strip():
+            if new_name.strip():
                 try:
-                    tracker = portfolio_manager.create_portfolio(new_portfolio_name.strip(), current_user)
-                    st.success(f"Portfolio '{new_portfolio_name}' created!")
+                    portfolio_manager.create_portfolio(new_name.strip(), current_user)
+                    st.success(f"Portfolio '{new_name}' created.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to create portfolio: {e}")
+            else:
+                st.warning("Enter a valid name!")
 
-    if not portfolio_name:
-        st.info("Select or create a portfolio to continue.")
+    # Main content: Tabs
+    st.title("📊 TrackerBazaar")
+
+    if not st.session_state.selected_portfolio:
+        st.info("Select or create a portfolio to get started.")
         return
 
-    # Load portfolio data
-    tracker = portfolio_manager.load_portfolio(portfolio_name, current_user)
-    if not tracker:
-        st.warning("Could not load portfolio data.")
-        return
-
-    # Main modules in tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["Trade Manager", "Dividends", "Cash", "Dashboard", "FIRE Tracker"]
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        [
+            "🏠 Dashboard",
+            "💹 Transactions",
+            "💰 Dividends",
+            "💵 Cash",
+            "🔎 Stock Explorer",
+            "📘 Guide",
+            "⚙️ Settings",
+        ]
     )
 
     with tab1:
-        trade_manager.view_trade_manager(tracker, portfolio_manager, portfolio_name, current_user)
+        dashboard.show_dashboard(st.session_state.selected_portfolio, current_user)
 
     with tab2:
-        dividends.view_dividends(tracker, portfolio_manager, portfolio_name, current_user)
+        transactions.show_transactions(st.session_state.selected_portfolio, current_user)
 
     with tab3:
-        cash.view_cash(tracker, portfolio_manager, portfolio_name, current_user)
+        dividends.show_dividends(st.session_state.selected_portfolio, current_user)
 
     with tab4:
-        dashboard.view_dashboard(tracker)
+        cash.show_cash(st.session_state.selected_portfolio, current_user)
 
     with tab5:
-        fire_tracker.view_fire_tracker(tracker, portfolio_manager, portfolio_name, current_user)
+        stock_explorer.show_stock_explorer()
+
+    with tab6:
+        guide.show_guide()
+
+    with tab7:
+        st.subheader("⚙️ Settings")
+        st.write("Manage your account and portfolios here.")
+        if st.button("Delete Selected Portfolio"):
+            try:
+                portfolio_manager.delete_portfolio(
+                    st.session_state.selected_portfolio, current_user
+                )
+                st.success("Portfolio deleted.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to delete: {e}")
+
 
 if __name__ == "__main__":
     main()
