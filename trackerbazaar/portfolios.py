@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from .tracker import Tracker  # fixed import
+from .tracker import Tracker
 
 DB = "trackerbazaar.db"
 
@@ -9,7 +9,6 @@ class PortfolioManager:
         self._init_db()
 
     def _init_db(self):
-        """Ensure the portfolios table exists."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute("""
@@ -52,11 +51,15 @@ class PortfolioManager:
             return None
 
     def list_portfolios(self, email):
-        """Return list of portfolio names for a user, safe if email is None."""
-        if not email:
+        """Return list of portfolio names for a user."""
+        if not email:   # guard against None
             return []
-        with sqlite3.connect(DB) as conn:
-            c = conn.cursor()
-            c.execute("SELECT name FROM portfolios WHERE email=? ORDER BY name", (email,))
-            rows = c.fetchall()
-            return [r[0] for r in rows] if rows else []
+        try:
+            with sqlite3.connect(DB) as conn:
+                c = conn.cursor()
+                c.execute("SELECT name FROM portfolios WHERE email=? ORDER BY name", (email,))
+                rows = c.fetchall()
+                return [r[0] for r in rows] if rows else []
+        except Exception as e:
+            print(f"[ERROR] list_portfolios failed: {e}")
+            return []
