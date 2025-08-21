@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import datetime
+from datetime import datetime, date
 from trackerbazaar.data import load_psx_data, excel_date_to_datetime
 
 def initialize_tracker(tracker):
@@ -177,6 +177,38 @@ class PortfolioTracker:
             df['date'] = pd.to_datetime(df['date'])  # Ensure date is datetime
             df = df.sort_values('date')  # Sort by date
         return df if not df.empty else pd.DataFrame(columns=['date', 'invested'])
+
+    def get_profit_loss_timeline(self):
+        """Return a DataFrame with the unrealized profit/loss over time."""
+        timeline = []
+        
+        # Get unique dates from transactions
+        dates = sorted(set(trans['date'] for trans in self.transactions if trans['type'] in ['Buy', 'Sell']))
+        
+        # Calculate profit/loss for each date based on holdings
+        for date in dates:
+            total_market_value = 0.0
+            total_invested = 0.0
+            for ticker, data in self.holdings.items():
+                # Only consider holdings purchased on or before the current date
+                if data['purchase_date'] <= date:
+                    current_price = self.current_prices.get(ticker, {}).get('price', 0.0)
+                    market_value = data['shares'] * current_price
+                    total_market_value += market_value
+                    total_invested += data['total_cost']
+            profit_loss = total_market_value - total_invested
+            timeline.append({
+                'date': date,
+                'profit_loss': profit_loss
+            })
+
+        # Convert to DataFrame and ensure unique dates
+        df = pd.DataFrame(timeline)
+        if not df.empty:
+            df = df.groupby('date', as_index=False).last()  # Keep last entry for each date
+            df['date'] = pd.to_datetime(df['date'])  # Ensure date is datetime
+            df = df.sort_values('date')  # Sort by date
+        return df if not df.empty else pd.DataFrame(columns=['date', 'profit_loss'])
 
     def get_cash_summary(self):
         """Return a DataFrame summarizing cash transactions."""
