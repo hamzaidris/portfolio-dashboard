@@ -43,8 +43,7 @@ def main():
 
     # Portfolio creation
     st.sidebar.header("Portfolio Management")
-    new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new。当时
-
+    new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new_portfolio_name")
     if st.sidebar.button("Create Portfolio", key="create_portfolio"):
         tracker = portfolio_manager.create_portfolio(new_portfolio_name, user_manager.get_current_user())
         if tracker:
