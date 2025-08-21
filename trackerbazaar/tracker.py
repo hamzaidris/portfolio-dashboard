@@ -43,7 +43,7 @@ class PortfolioTracker:
         """Add a transaction to the portfolio."""
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
-        if not isinstance(date, (datetime, date)):
+        if not isinstance(date, (datetime, datetime.date)):
             raise ValueError("Invalid date format")
         if trans_type not in ["Buy", "Sell", "Deposit", "Withdraw"]:
             raise ValueError("Invalid transaction type")
@@ -152,7 +152,6 @@ class PortfolioTracker:
         """Return a DataFrame of alerts."""
         return pd.DataFrame(self.alerts) if self.alerts else pd.DataFrame(columns=['date', 'message'])
 
-    # Placeholder for other methods (not shown due to truncation)
     def update_filer_status(self, status):
         self.filer_status = status
 
@@ -215,7 +214,6 @@ class PortfolioTracker:
 
     def get_portfolio(self):
         """Return a DataFrame summarizing portfolio holdings."""
-        # Placeholder implementation (not shown in original)
         portfolio = []
         for ticker, data in self.holdings.items():
             current_price = self.current_prices.get(ticker, {}).get('price', 0.0)
