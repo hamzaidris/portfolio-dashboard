@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 from trackerbazaar.portfolios import PortfolioManager
-
+from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
 
 def render_add_transaction(tracker, portfolio_manager, username):
     st.header("Add Transaction")
