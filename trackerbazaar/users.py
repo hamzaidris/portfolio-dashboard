@@ -4,74 +4,75 @@ from passlib.hash import pbkdf2_sha256
 
 DB = "trackerbazaar.db"
 
+
 class UserManager:
     def __init__(self):
         self._init_db()
         if "logged_in_user" not in st.session_state:
             st.session_state.logged_in_user = None
-        if "logged_in_username" not in st.session_state:
-            st.session_state.logged_in_username = None
 
     def _init_db(self):
+        """Ensure the users table exists."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     email TEXT PRIMARY KEY,
-                    username TEXT,
                     password_hash TEXT NOT NULL
                 )
             """)
             conn.commit()
 
     def signup(self):
-        st.subheader("Sign Up")
-        with st.form("signup_form", clear_on_submit=False):
-            email = st.text_input("Email")
-            username = st.text_input("Username")
-            pwd = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Create Account")
-
-        if submit:
-            if not email or not pwd:
-                st.error("Email and password required")
+        st.subheader("Create Account")
+        email = st.text_input("Email", key="signup_email")
+        password = st.text_input("Password", type="password", key="signup_pw")
+        if st.button("Sign Up"):
+            if not email or not password:
+                st.error("Please enter both email and password.")
                 return
-            ph = pbkdf2_sha256.hash(pwd)
-            try:
-                with sqlite3.connect(DB) as conn:
-                    c = conn.cursor()
-                    c.execute("INSERT INTO users(email, username, password_hash) VALUES (?,?,?)",
-                              (email, username, ph))
-                    conn.commit()
-                st.success("Account created. Please login.")
-                st.experimental_rerun()
-            except sqlite3.IntegrityError:
-                st.error("Email already exists.")
+
+            with sqlite3.connect(DB) as conn:
+                c = conn.cursor()
+                c.execute("SELECT email FROM users WHERE email=?", (email,))
+                if c.fetchone():
+                    st.error("User already exists. Try logging in.")
+                    return
+
+                password_hash = pbkdf2_sha256.hash(password)
+                c.execute("INSERT INTO users(email, password_hash) VALUES (?,?)",
+                          (email, password_hash))
+                conn.commit()
+
+            st.success("Account created. Please log in.")
+            st.rerun()
 
     def login(self):
         st.subheader("Login")
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            pwd = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_pw")
+        if st.button("Login"):
+            if not email or not password:
+                st.error("Please enter both email and password.")
+                return
 
-        if submit:
             with sqlite3.connect(DB) as conn:
                 c = conn.cursor()
-                c.execute("SELECT password_hash, username FROM users WHERE email=?", (email,))
+                c.execute("SELECT password_hash FROM users WHERE email=?", (email,))
                 row = c.fetchone()
 
-            if row and pbkdf2_sha256.verify(pwd, row[0]):
+            if row and pbkdf2_sha256.verify(password, row[0]):
                 st.session_state.logged_in_user = email
-                st.session_state.logged_in_username = row[1] or email.split("@")[0]
-                st.experimental_rerun()
+                st.success(f"Welcome, {email}!")
+                st.rerun()
             else:
                 st.error("Invalid credentials.")
 
     def logout(self):
-        st.session_state.logged_in_user = None
-        st.session_state.logged_in_username = None
-        st.experimental_rerun()
+        if st.button("Logout"):
+            st.session_state.logged_in_user = None
+            st.success("Logged out successfully.")
+            st.rerun()
 
     def get_current_user(self):
         return st.session_state.get("logged_in_user")
