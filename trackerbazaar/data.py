@@ -1,9 +1,17 @@
 # trackerbazaar/data.py
 
 import sqlite3
-import os
 
 DB_FILE = "trackerbazaar_v2.db"
+
+# ✅ Global TABLES dict so other modules can import it
+TABLES = {
+    "users": "users",
+    "portfolios": "portfolios",
+    "transactions": "transactions",
+    "dividends": "dividends",
+    "cash": "cash",
+}
 
 
 def get_connection():
@@ -75,7 +83,6 @@ def init_db():
         """)
 
         # --- 🔧 MIGRATIONS ---
-        # Add `owner_email` column if missing (older DBs might not have it)
         cursor.execute("PRAGMA table_info(portfolios)")
         cols = [row[1] for row in cursor.fetchall()]
         if "owner_email" not in cols:
