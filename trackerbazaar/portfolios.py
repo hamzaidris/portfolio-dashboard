@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import os
 from .tracker import Tracker
 
 DB = "trackerbazaar.db"
@@ -7,9 +8,10 @@ DB = "trackerbazaar.db"
 
 class PortfolioManager:
     def __init__(self):
-        self._init_db()
+        self._ensure_db()
 
-    def _init_db(self):
+    def _ensure_db(self):
+        """Always ensure portfolios table exists."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
@@ -25,13 +27,13 @@ class PortfolioManager:
             conn.commit()
 
     def create_portfolio(self, name, email):
-        """Create a new empty portfolio."""
+        self._ensure_db()
         tracker = Tracker()
         self.save_portfolio(name, email, tracker)
         return tracker
 
     def save_portfolio(self, name, email, tracker):
-        """Save portfolio to DB (force JSON string)."""
+        self._ensure_db()
         tracker_data = json.dumps(tracker.to_dict(), ensure_ascii=False)
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
@@ -42,7 +44,7 @@ class PortfolioManager:
             conn.commit()
 
     def load_portfolio(self, name, email):
-        """Load a portfolio and reconstruct Tracker."""
+        self._ensure_db()
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
@@ -59,7 +61,7 @@ class PortfolioManager:
             return Tracker()
 
     def list_portfolios(self, email):
-        """Return a list of portfolio names for this user."""
+        self._ensure_db()
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
