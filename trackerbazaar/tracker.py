@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import datetime  # ✅ use full module
+import datetime
 from trackerbazaar.data import load_psx_data, excel_date_to_datetime
 
 def initialize_tracker(tracker):
@@ -128,3 +128,215 @@ class PortfolioTracker:
             'date': datetime.datetime.now(),
             'message': f"{trans_type} {quantity:.2f} shares of {ticker} at PKR {price:.2f}"
         })
+
+    def get_invested_timeline(self):
+        """Return a DataFrame with the cumulative invested capital over time."""
+        timeline = []
+        cumulative_invested = 0.0
+
+        # Combine transactions and cash deposits for timeline
+        events = []
+        for trans in self.transactions:
+            events.append({
+                'date': trans['date'],
+                'type': trans['type'],
+                'amount': trans['total'] if trans['type'] in ['Buy', 'Deposit'] else -trans['total']
+            })
+        for deposit in self.cash_deposits:
+            events.append({
+                'date': deposit['date'],
+                'type': 'Deposit',
+                'amount': deposit['amount']
+            })
+
+        # Sort events by date
+        events.sort(key=lambda x: x['date'])
+
+        # Calculate cumulative invested amount
+        for event in events:
+            if event['type'] in ['Buy', 'Deposit']:
+                cumulative_invested += event['amount']
+            elif event['type'] == 'Sell':
+                cumulative_invested += event['amount']  # Negative amount reduces invested capital
+            timeline.append({
+                'date': event['date'],
+                'invested': max(cumulative_invested, 0.0)
+            })
+
+        # Convert to DataFrame and ensure unique dates
+        df = pd.DataFrame(timeline)
+        if not df.empty:
+            df = df.groupby('date', as_index=False).last()
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+        return df if not df.empty else pd.DataFrame(columns=['date', 'invested'])
+
+    def get_profit_loss_timeline(self):
+        """Return a DataFrame with the unrealized profit/loss over time."""
+        timeline = []
+        
+        # Get unique dates from transactions
+        dates = sorted(set(trans['date'] for trans in self.transactions if trans['type'] in ['Buy', 'Sell']))
+        
+        # Calculate profit/loss for each date based on holdings
+        for date in dates:
+            total_market_value = 0.0
+            total_invested = 0.0
+            for ticker, data in self.holdings.items():
+                if data['purchase_date'] <= date:
+                    current_price = self.current_prices.get(ticker, {}).get('price', 0.0)
+                    market_value = data['shares'] * current_price
+                    total_market_value += market_value
+                    total_invested += data['total_cost']
+            profit_loss = total_market_value - total_invested
+            timeline.append({
+                'date': date,
+                'profit_loss': profit_loss
+            })
+
+        # Convert to DataFrame and ensure unique dates
+        df = pd.DataFrame(timeline)
+        if not df.empty:
+            df = df.groupby('date', as_index=False).last()
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+        return df if not df.empty else pd.DataFrame(columns=['date', 'profit_loss'])
+
+    def get_cash_summary(self):
+        """Return a DataFrame summarizing cash transactions."""
+        cash_summary = []
+        for trans in self.transactions:
+            if trans['type'] in ['Deposit', 'Withdraw']:
+                cash_summary.append({
+                    'date': trans['date'],
+                    'type': trans['type'],
+                    'quantity': trans['quantity'],
+                    'price': trans['price'],
+                    'fee': trans['fee']
+                })
+        return pd.DataFrame(cash_summary) if cash_summary else pd.DataFrame(columns=['date', 'type', 'quantity', 'price', 'fee'])
+
+    def get_alerts(self):
+        """Return a DataFrame of alerts."""
+        if not self.alerts:
+            return pd.DataFrame(columns=['date', 'message'])
+        try:
+            df = pd.DataFrame(self.alerts)
+            if not df.empty:
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values('date', ascending=False)
+            return df
+        except Exception as e:
+            st.error(f"Error processing alerts: {str(e)}")
+            return pd.DataFrame(columns=['date', 'message'])
+
+    def update_filer_status(self, status):
+        self.filer_status = status
+
+    def add_dividend(self, ticker, amount):
+        if ticker not in self.current_prices:
+            raise ValueError(f"Ticker {ticker} not found")
+        if amount <= 0:
+            raise ValueError("Dividend amount must be greater than 0")
+        if ticker not in self.dividends:
+            self.dividends[ticker] = 0.0
+        self.dividends[ticker] += amount
+        self.alerts.append({
+            'date': datetime.datetime.now(),
+            'message': f"Dividend of PKR {amount:.2f} added for {ticker}"
+        })
+
+    def update_target_allocations(self, allocations):
+        total = sum(allocations.values())
+        if abs(total - 100.0) > 0.01 and total != 0:
+            raise ValueError("Target allocations must sum to 100% or 0%")
+        self.target_allocations = allocations
+
+    def calculate_distribution(self, cash):
+        distribution = []
+        leftover = cash
+        for i, (ticker, alloc) in enumerate(self.target_allocations.items()):
+            if alloc <= 0:
+                continue
+            price = self.current_prices.get(ticker, {}).get('price', 0.0)
+            target_amount = (alloc / 100) * cash
+            quantity = target_amount // price if price > 0 else 0
+            if quantity > 0:
+                fee = self._calculate_fee(price, quantity)
+                sst = self._calculate_sst(price, quantity, fee)
+                net_invested = quantity * price + fee + sst
+                distributed = min(net_invested, target_amount)
+                leftover -= distributed
+                distribution.append({
+                    'Stock': ticker,
+                    'Quantity': quantity,
+                    'Price': price,
+                    'Fee': fee,
+                    'SST': sst,
+                    'Net Invested': net_invested,
+                    'Leftover': leftover if i == len(self.target_allocations) - 1 else 0.0
+                })
+        return pd.DataFrame(distribution) if distribution else pd.DataFrame(columns=['Stock', 'Quantity', 'Price', 'Fee', 'SST', 'Net Invested', 'Leftover'])
+
+    def _calculate_fee(self, price, quantity):
+        """Calculate brokerage fee based on price and quantity."""
+        if price <= 20:
+            return quantity * self.broker_fees['low_price_fee']
+        return quantity * price * self.broker_fees['brokerage_rate']
+
+    def _calculate_sst(self, price, quantity, fee):
+        """Calculate SST based on price and fee."""
+        if price <= 20:
+            return quantity * self.broker_fees['sst_low_price']
+        return fee * self.broker_fees['sst_rate']
+
+    def get_portfolio(self):
+        """Return a DataFrame summarizing portfolio holdings."""
+        portfolio = []
+        total_portfolio_value = self.get_total_portfolio_value()
+        for ticker, data in self.holdings.items():
+            current_price = self.current_prices.get(ticker, {}).get('price', 0.0)
+            market_value = data['shares'] * current_price
+            total_invested = data.get('total_cost', 0.0)
+            gain_loss = market_value - total_invested
+            portfolio.append({
+                'Stock': ticker,
+                'Quantity': data['shares'],
+                'Market Value': market_value,
+                'Total Invested': total_invested,
+                'Gain/Loss': gain_loss,
+                'Dividends': self.dividends.get(ticker, 0.0),
+                '% Gain': (gain_loss / total_invested * 100) if total_invested > 0 else 0.0,
+                'ROI %': ((market_value + self.dividends.get(ticker, 0.0) - total_invested) / total_invested * 100) if total_invested > 0 else 0.0,
+                'Current Allocation %': (market_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0.0,
+                'Target Allocation %': self.target_allocations.get(ticker, 0.0),
+                'Allocation Delta %': self.target_allocations.get(ticker, 0.0) - (market_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0.0,
+                'CGT (Potential)': gain_loss * 0.15 if self.filer_status == 'Filer' else gain_loss * 0.3
+            })
+        return pd.DataFrame(portfolio) if portfolio else pd.DataFrame(columns=['Stock', 'Quantity', 'Market Value', 'Total Invested', 'Gain/Loss', 'Dividends', '% Gain', 'ROI %', 'Current Allocation %', 'Target Allocation %', 'Allocation Delta %', 'CGT (Potential)'])
+
+    def get_total_portfolio_value(self):
+        """Calculate total portfolio value including cash."""
+        total = self.cash
+        for ticker, data in self.holdings.items():
+            total += data['shares'] * self.current_prices.get(ticker, {}).get('price', 0.0)
+        return max(total, 0.0)
+
+    def get_dashboard(self):
+        """Return dashboard metrics."""
+        portfolio = self.get_portfolio()
+        total_invested = sum(self.holdings.get(ticker, {}).get('total_cost', 0.0) for ticker in self.holdings)
+        total_market_value = sum(self.holdings.get(ticker, {}).get('shares', 0.0) * self.current_prices.get(ticker, {}).get('price', 0.0) for ticker in self.holdings)
+        total_dividends = sum(self.dividends.values())
+        total_unrealized_gain = total_market_value - total_invested
+        total_roi = ((total_market_value + total_dividends - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
+        return {
+            'Total Portfolio Value': total_market_value + self.cash,
+            'Total Invested': total_invested,
+            'Total Realized Gain': self.realized_gain,
+            'Total Unrealized Gain': total_unrealized_gain,
+            'Total Dividends': total_dividends,
+            'Total ROI %': total_roi,
+            'Cash Balance': self.cash,
+            '% of Target Invested': (total_invested / self.target_investment * 100) if self.target_investment > 0 else 0.0
+        }
