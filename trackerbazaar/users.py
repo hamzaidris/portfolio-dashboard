@@ -11,16 +11,25 @@ class UserManager:
             st.session_state.logged_in_user = None
 
     def _init_db(self):
-        """Initialize SQLite database with users table."""
+        """Initialize SQLite database with users table and handle schema migration if needed."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        email TEXT PRIMARY KEY,
-                        password_hash TEXT NOT NULL
-                    )
-                """)
+                # Check if table exists and has the correct columns
+                cursor.execute("PRAGMA table_info(users)")
+                columns = {row[1] for row in cursor.fetchall()}
+                if "users" not in columns and "password_hash" not in columns:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            email TEXT PRIMARY KEY,
+                            password_hash TEXT NOT NULL
+                        )
+                    """)
+                elif "password_hash" not in columns:
+                    # Migrate existing table by adding password_hash column
+                    cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+                    conn.commit()
+                    st.warning("Database schema migrated. Please re-signup or update existing accounts.")
                 conn.commit()
         except sqlite3.OperationalError as e:
             st.error(f"Failed to initialize database: {e}. Please check file permissions or contact support.")
