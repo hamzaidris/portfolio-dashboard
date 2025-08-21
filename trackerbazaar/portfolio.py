@@ -1,38 +1,56 @@
 # trackerbazaar/portfolio.py
+import streamlit as st
+import sqlite3
+from trackerbazaar.data import DB_FILE, init_db
 
-from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.current_prices import CurrentPrices   # ✅ use class, not function
+def list_portfolios():
+    """Fetch all portfolios from DB"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, name, owner_email, created_at FROM portfolios")
+        portfolios = cursor.fetchall()
+    except Exception as e:
+        portfolios = []
+        st.error(f"Error loading portfolios: {e}")
+    conn.close()
+    return portfolios
 
-class Portfolio:
-    def __init__(self, name):
-        self.name = name
-        self.tracker = PortfolioTracker()
-        self.price_service = CurrentPrices()   # ✅ instantiate
+def show():
+    """Streamlit UI for managing portfolios"""
+    st.header("📂 Your Portfolios")
 
-    def get_summary(self):
-        holdings = self.tracker.get_holdings(self.name)
-        summary = {"holdings": [], "total_value": 0}
+    # Ensure DB exists
+    init_db()
 
-        for holding in holdings:
-            ticker = holding["ticker"]
-            qty = holding["quantity"]
-            avg_price = holding["avg_price"]
+    portfolios = list_portfolios()
+    if not portfolios:
+        st.info("No portfolios found. Add one below.")
+    else:
+        for p in portfolios:
+            st.write(f"**{p[1]}** (Owner: {p[2]}, Created: {p[3]})")
 
-            # ✅ fetch current price from class method
-            current_price = self.price_service.get_price(ticker)
+    # Form to add portfolio
+    st.subheader("➕ Add New Portfolio")
+    with st.form("add_portfolio_form"):
+        name = st.text_input("Portfolio Name")
+        owner_email = st.text_input("Owner Email")
+        submitted = st.form_submit_button("Create Portfolio")
 
-            value = qty * current_price
-            profit_loss = (current_price - avg_price) * qty
-
-            summary["holdings"].append({
-                "ticker": ticker,
-                "quantity": qty,
-                "avg_price": avg_price,
-                "current_price": current_price,
-                "value": value,
-                "profit_loss": profit_loss,
-            })
-
-            summary["total_value"] += value
-
-        return summary
+        if submitted:
+            if not name or not owner_email:
+                st.warning("⚠️ Please enter both name and email.")
+            else:
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "INSERT INTO portfolios (name, owner_email) VALUES (?, ?)",
+                        (name, owner_email)
+                    )
+                    conn.commit()
+                    conn.close()
+                    st.success(f"✅ Portfolio '{name}' created!")
+                    st.experimental_rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to create portfolio: {e}")
