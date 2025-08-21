@@ -26,17 +26,22 @@ class UserManager:
                 cursor.execute("PRAGMA table_info(users)")
                 columns = {row[1] for row in cursor.fetchall()}
                 logger.info(f"Existing columns in users table: {columns}")
-                if not columns or {"email", "password_hash", "username"} - columns:
-                    logger.info("Recreating users table due to missing columns.")
-                    # Backup existing data if table exists
-                    if columns:
-                        cursor.execute("SELECT email, username FROM users")
-                        existing_users = [(row[0], row[1] if row[1] else "") for row in cursor.fetchall()]
-                        if existing_users:
-                            logger.warning(f"Backing up {len(existing_users)} existing users before recreating table.")
-                            backup_table = "users_backup_" + datetime.now().strftime("%Y%m%d_%H%M%S")
-                            cursor.execute(f"ALTER TABLE users RENAME TO {backup_table}")
-                    # Recreate the table with username
+
+                if "users" in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+                    # Migrate existing table if username is missing
+                    if "username" not in columns:
+                        logger.info("Adding username column to existing users table.")
+                        cursor.execute("ALTER TABLE users ADD COLUMN username TEXT NOT NULL DEFAULT ''")
+                        conn.commit()
+                        st.warning("Username column added. Please update your account by re-signing up or logging in to set a username.")
+                    if "password_hash" not in columns:
+                        logger.info("Adding password_hash column to existing users table.")
+                        cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+                        conn.commit()
+                        st.warning("Password hash column added. Please re-signup to set a valid password.")
+                else:
+                    # Create table if it doesn't exist
+                    logger.info("Creating new users table.")
                     cursor.execute("""
                         CREATE TABLE users (
                             email TEXT NOT NULL,
@@ -46,14 +51,13 @@ class UserManager:
                         )
                     """)
                     conn.commit()
-                    # Restore backed-up data with empty username/password_hash if missing (users must re-signup)
-                    if existing_users:
-                        for email, username in existing_users:
-                            cursor.execute("INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)", 
-                                           (email, username if username else "", ""))
-                    st.warning("Database schema recreated. Please re-signup with your email and username to set a new password.")
-                else:
-                    logger.info("Users table schema is correct.")
+
+                # Verify schema after migration/creation
+                cursor.execute("PRAGMA table_info(users)")
+                final_columns = {row[1] for row in cursor.fetchall()}
+                logger.info(f"Final columns in users table: {final_columns}")
+                if not {"email", "username", "password_hash"} <= final_columns:
+                    raise Exception("Failed to ensure required columns in users table.")
                 conn.commit()
         except sqlite3.OperationalError as e:
             logger.error(f"Failed to initialize database: {e}")
