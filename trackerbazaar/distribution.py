@@ -1,10 +1,3 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-from datetime import datetime
-from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.portfolios import PortfolioManager
-
 def render_distribution(tracker):
     portfolio_manager = PortfolioManager()
     email = st.session_state.get('logged_in_user')
@@ -52,9 +45,8 @@ def render_distribution(tracker):
                     except ValueError as e:
                         st.error(f"Error: {e}")
             with col2:
-                if st.button("Remove Stock"):
-                    new_allocations = {ticker: tracker.target_allocations.get(ticker, 0.0) for ticker in tracker.current_prices.keys()}
-                    new_allocations[selected_ticker] = 0.0
+                if st.button("Remove Allocation"):
+                    new_allocations = {ticker: alloc for ticker, alloc in tracker.target_allocations.items() if ticker != selected_ticker}
                     try:
                         tracker.update_target_allocations(new_allocations)
                         portfolio_manager.save_portfolio(portfolio_name, email, tracker)
