@@ -6,7 +6,8 @@ def render_portfolio(tracker):
     st.header("Portfolio Summary")
     st.write("Overview of your current holdings and cash in hand.")
     
-    portfolio_df = tracker.get_portfolio()
+    # Safety: default to empty DF if None is returned
+    portfolio_df = tracker.get_portfolio() or pd.DataFrame()
     if not portfolio_df.empty:
         st.dataframe(
             portfolio_df,
@@ -14,7 +15,6 @@ def render_portfolio(tracker):
                 "Market Value": st.column_config.NumberColumn(format="PKR %.2f"),
                 "Total Invested": st.column_config.NumberColumn(format="PKR %.2f"),
                 "Gain/Loss": st.column_config.NumberColumn(format="PKR %.2f"),
-                "Dividends": st.column_config.NumberColumn(format="PKR %.2f"),
                 "% Gain": st.column_config.NumberColumn(format="%.2f%"),
                 "ROI %": st.column_config.NumberColumn(format="%.2f%"),
                 "Current Allocation %": st.column_config.NumberColumn(format="%.2f%"),
