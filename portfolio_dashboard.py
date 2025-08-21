@@ -67,7 +67,7 @@ def render_dashboard():
 
     # Strict check for both authentication and username
     if st.session_state.authenticated and st.session_state.username:
-        tracker = PortfolioTracker(st.session_state.username)
+        tracker = PortfolioTracker()  # REMOVED username parameter here
         st.success(f"Welcome, {st.session_state.username}!")
         st.write("Here will be portfolio stats, transactions, dividends, etc.")
     else:
