@@ -1,66 +1,68 @@
-import streamlit as st
 import sqlite3
 from passlib.hash import pbkdf2_sha256
+import streamlit as st
 
 DB = "trackerbazaar.db"
 
+
 class UserManager:
     def __init__(self):
-        self._init_db()
-        if "logged_in_user" not in st.session_state:
-            st.session_state.logged_in_user = None
-        if "logged_in_username" not in st.session_state:
-            st.session_state.logged_in_username = None
+        self._ensure_db()
 
-    def _init_db(self):
+    def _ensure_db(self):
+        """Ensure users table exists."""
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
-            c.execute("""
+            c.execute(
+                """
                 CREATE TABLE IF NOT EXISTS users (
                     email TEXT PRIMARY KEY,
-                    password_hash TEXT NOT NULL
+                    password_hash TEXT NOT NULL,
+                    username TEXT
                 )
-            """)
+                """
+            )
             conn.commit()
 
-    def signup(self):
-        st.subheader("Sign Up")
-        email = st.text_input("Email", key="signup_email")
-        password = st.text_input("Password", type="password", key="signup_password")
-        if st.button("Create Account"):
-            if not email or not password:
-                st.error("Please fill all fields")
-                return
-            with sqlite3.connect(DB) as conn:
-                c = conn.cursor()
-                c.execute("SELECT email FROM users WHERE email=?", (email,))
-                if c.fetchone():
-                    st.error("User already exists")
-                else:
-                    c.execute("INSERT INTO users(email, password_hash) VALUES (?,?)",
-                              (email, pbkdf2_sha256.hash(password)))
-                    conn.commit()
-                    st.success("Account created! Please login.")
+    def signup(self, email, password, username=None):
+        self._ensure_db()
+        password_hash = pbkdf2_sha256.hash(password)
+        with sqlite3.connect(DB) as conn:
+            c = conn.cursor()
+            try:
+                c.execute(
+                    "INSERT INTO users(email, password_hash, username) VALUES (?,?,?)",
+                    (email, password_hash, username),
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
 
     def login(self):
-        st.subheader("Login")
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
+        self._ensure_db()
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
         if st.button("Login"):
             with sqlite3.connect(DB) as conn:
                 c = conn.cursor()
-                c.execute("SELECT password_hash FROM users WHERE email=?", (email,))
+                c.execute(
+                    "SELECT password_hash, username FROM users WHERE email=?",
+                    (email,),
+                )
                 row = c.fetchone()
                 if row and pbkdf2_sha256.verify(password, row[0]):
                     st.session_state.logged_in_user = email
-                    st.session_state.logged_in_username = email  # alias for old code
-                    st.success("Login successful!")
+                    st.session_state.logged_in_username = row[1] or email.split("@")[0]
+                    st.success("Login successful ✅")
                     st.rerun()
                 else:
                     st.error("Invalid credentials")
 
+    def get_current_user(self):
+        return getattr(st.session_state, "logged_in_user", None)
+
     def logout(self):
         st.session_state.logged_in_user = None
         st.session_state.logged_in_username = None
-        st.success("Logged out successfully!")
         st.rerun()
