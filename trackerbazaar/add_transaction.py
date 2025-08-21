@@ -4,7 +4,27 @@ from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
 from trackerbazaar.portfolios import PortfolioManager
 
-def render_add_transaction(tracker):
+
+def render_add_transaction(tracker, portfolio_manager, username):
+    st.header("Add Transaction")
+    
+    with st.form("add_transaction_form"):
+        # ... your existing form code ...
+        
+        if st.form_submit_button("Add Transaction"):
+            try:
+                tracker.add_transaction(txn_date, ticker, trans_type, quantity, price, fee)
+                st.success("Transaction added successfully!")
+                
+                # Trigger save and refresh
+                portfolio_manager.save_portfolio(st.session_state.selected_portfolio, username, tracker)
+                st.session_state.data_changed = True
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error adding transaction: {e}")
+
+'''def render_add_transaction(tracker):
     portfolio_manager = PortfolioManager()
     email = st.session_state.get('logged_in_user')
     portfolio_name = st.session_state.get('selected_portfolio')
@@ -141,4 +161,4 @@ def render_sample_distribution(tracker):
     # Display the distribution table if it exists in session state
     if 'dist_df' in st.session_state and st.session_state.dist_df is not None:
         st.write("Sample Distribution Results:")
-        st.dataframe(st.session_state.dist_df)
+        st.dataframe(st.session_state.dist_df)'''
