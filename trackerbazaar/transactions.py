@@ -1,57 +1,39 @@
-# transactions.py
-import streamlit as st
-import pandas as pd
-from trackerbazaar.portfolios import PortfolioManager
+import sqlite3
+from datetime import datetime
 
-portfolio_manager = PortfolioManager()
+DB_FILE = "trackerbazaar_v2.db"  # ✅ new DB
 
-def show_transactions(selected_portfolio: str, user_email: str):
-    """Transaction history with modern UI"""
+def init_transactions_table():
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                portfolio_name TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                price REAL NOT NULL,
+                type TEXT CHECK(type IN ('buy','sell')) NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
-    try:
-        tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
-    except Exception as e:
-        st.error(f"Error loading portfolio: {e}")
-        return
+def add_transaction(email, portfolio_name, ticker, quantity, price, tx_type):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO transactions (email, portfolio_name, ticker, quantity, price, type, timestamp) VALUES (?,?,?,?,?,?,?)",
+            (email, portfolio_name, ticker, quantity, price, tx_type, datetime.now().isoformat())
+        )
+        conn.commit()
 
-    st.title("🧾 Transactions")
+def get_transactions(email, portfolio_name):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT ticker, quantity, price, type, timestamp FROM transactions WHERE email=? AND portfolio_name=? ORDER BY id DESC", (email, portfolio_name))
+        return c.fetchall()
 
-    if not tracker.transactions:
-        st.info("No transactions yet. Add buy/sell records to see history here.")
-        return
-
-    # ---- Convert to DataFrame ----
-    tx_df = pd.DataFrame(tracker.transactions).rename(columns={
-        "date": "Date",
-        "symbol": "Symbol",
-        "type": "Type",
-        "shares": "Shares",
-        "price": "Price",
-        "fees": "Brokerage Fee",
-        "total": "Total Amount"
-    })
-
-    # ---- Sorting ----
-    tx_df["Date"] = pd.to_datetime(tx_df["Date"])
-    tx_df = tx_df.sort_values("Date", ascending=False)
-
-    # ---- Summary ----
-    total_buys = tx_df.loc[tx_df["Type"] == "buy", "Total Amount"].sum()
-    total_sells = tx_df.loc[tx_df["Type"] == "sell", "Total Amount"].sum()
-    net_cashflow = total_sells - total_buys
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📥 Total Buys", f"{total_buys:,.2f} PKR")
-    col2.metric("📤 Total Sells", f"{total_sells:,.2f} PKR")
-    col3.metric("💸 Net Cashflow", f"{net_cashflow:,.2f} PKR")
-
-    st.divider()
-
-    # ---- Table ----
-    st.subheader("📑 Transaction History")
-    st.dataframe(tx_df, use_container_width=True)
-
-    # ---- Chart ----
-    st.subheader("📊 Buy vs Sell Trend")
-    trend_df = tx_df.groupby(["Date", "Type"])["Total Amount"].sum().unstack(fill_value=0)
-    st.line_chart(trend_df)
+# Initialize on import
+init_transactions_table()
