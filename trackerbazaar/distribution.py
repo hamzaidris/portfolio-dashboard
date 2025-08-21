@@ -3,8 +3,13 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.portfolios import PortfolioManager
 
 def render_distribution(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.header("Distribution Analysis")
     dist_list = [
         {'Stock': ticker, 'Target Allocation %': alloc}
@@ -41,6 +46,7 @@ def render_distribution(tracker):
                     new_allocations[selected_ticker] = new_percentage
                     try:
                         tracker.update_target_allocations(new_allocations)
+                        portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                         st.success(f"Percentage for {selected_ticker} updated to {new_percentage}%")
                         st.rerun()
                     except ValueError as e:
@@ -51,6 +57,7 @@ def render_distribution(tracker):
                     new_allocations[selected_ticker] = 0.0
                     try:
                         tracker.update_target_allocations(new_allocations)
+                        portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                         st.success(f"{selected_ticker} removed from distribution.")
                         st.rerun()
                     except ValueError as e:
@@ -98,6 +105,7 @@ def render_distribution(tracker):
         if submit:
             try:
                 tracker.update_target_allocations(new_allocations)
+                portfolio_manager.save_portfolio(portfolio_name, email, tracker)
                 st.success("Target allocations updated successfully!")
                 st.rerun()
             except ValueError as e:
