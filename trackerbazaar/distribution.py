@@ -65,6 +65,11 @@ def render_distribution(tracker):
             color_discrete_map={'Target Allocation %': '#00CC96'}
         )
         st.plotly_chart(fig_dist, use_container_width=True)
+        alloc_df = {ticker: [alloc] for ticker, alloc in tracker.target_allocations.items() if alloc > 0}
+        if alloc_df:
+            st.table({k: [f"{v:.2f}%" for v in vs] for k, vs in alloc_df.items()})
+        else:
+            st.info("No target allocations set yet.")
     else:
         st.info("No target allocations set. Add allocations below.")
 
