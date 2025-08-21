@@ -30,17 +30,17 @@ def main():
     portfolio_manager = PortfolioManager()
 
     # Handle login state
-    if not user_manager.is_logged_in():
+    if not _manager.is_logged_in():
         tabs = st.tabs(["Login", "Sign Up"])
         with tabs[0]:
-            user_manager.login()
+            _manager.login()
         with tabs[1]:
             user_manager.signup()
         st.info("Please log in or sign up to access your portfolios.")
         return
 
     # Show logout button in sidebar for logged-in users
-    st.sidebar.header("User")
+    st.sidebar.header("Usera")
     user_manager.logout()
 
     # Initialize session state
