@@ -23,11 +23,15 @@ class PortfolioManager:
             conn.commit()
 
     def create_portfolio(self, name, email):
+        if not email:
+            raise ValueError("Email must be provided to create a portfolio")
         tracker = Tracker()
         self.save_portfolio(name, email, tracker)
         return tracker
 
     def save_portfolio(self, name, email, tracker):
+        if not email:
+            raise ValueError("Email must be provided to save a portfolio")
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute(
@@ -37,6 +41,8 @@ class PortfolioManager:
             conn.commit()
 
     def load_portfolio(self, name, email):
+        if not email:
+            return None
         with sqlite3.connect(DB) as conn:
             c = conn.cursor()
             c.execute("SELECT data FROM portfolios WHERE email=? AND name=?", (email, name))
@@ -46,6 +52,7 @@ class PortfolioManager:
             return None
 
     def list_portfolios(self, email):
+        """Return list of portfolio names for a user, safe if email is None."""
         if not email:
             return []
         with sqlite3.connect(DB) as conn:
