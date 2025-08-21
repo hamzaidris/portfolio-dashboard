@@ -41,12 +41,8 @@ class UserManager:
                             password_hash TEXT NOT NULL
                         )
                     """)
-                    # Restore backed-up data with empty password_hash (users must re-signup)
-                    if existing_emails:
-                        for email in existing_emails:
-                            cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (email, ""))
                     conn.commit()
-                    st.warning("Database schema recreated. Existing users must re-signup with their emails.")
+                    st.warning("Database schema recreated. Please re-signup with your email to set a new password.")
                 else:
                     logger.info("Users table schema is correct.")
                 conn.commit()
@@ -71,10 +67,16 @@ class UserManager:
                     cursor = conn.cursor()
                     cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
                     result = cursor.fetchone()
-                    if result and pbkdf2_sha256.verify(password, result[0]):
-                        st.session_state.logged_in_user = email
-                        st.success(f"Logged in as {email}")
-                        st.rerun()
+                    if result:
+                        try:
+                            if pbkdf2_sha256.verify(password, result[0]):
+                                st.session_state.logged_in_user = email
+                                st.success(f"Logged in as {email}")
+                                st.rerun()
+                            else:
+                                st.error("Invalid email or password")
+                        except ValueError:
+                            st.error("Invalid password hash for this account. Please re-signup with this email to reset your password.")
                     else:
                         st.error("Invalid email or password")
             except sqlite3.OperationalError as e:
