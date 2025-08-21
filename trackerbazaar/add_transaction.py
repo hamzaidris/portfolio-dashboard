@@ -13,6 +13,8 @@ def render_add_transaction(tracker):
     with col2:
         trans_type = st.selectbox("Transaction Type", ["Buy", "Sell", "Deposit", "Withdraw"], key="add_trans_type")
 
+    cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
+
     if trans_type in ["Buy", "Sell"]:
         ticker = st.selectbox("Stock Ticker", list(tracker.current_prices.keys()), key="add_trans_ticker")
         current_price = tracker.current_prices.get(ticker, {}).get('price', 0.0)
@@ -22,19 +24,26 @@ def render_add_transaction(tracker):
         total_cost = price * quantity + fee
 
         if st.button("Add Transaction", key="add_trans_submit"):
-            cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
-            if trans_type == "Buy" and cash < total_cost:
+            if cash <= 0.0 and trans_type == "Buy":
+                st.error("No cash available for this transaction.", icon="⚠️")
+                time.sleep(5)
+                st.rerun()
+            elif price <= 0.0:
+                st.error("Price must be greater than 0.", icon="⚠️")
+                time.sleep(5)
+                st.rerun()
+            elif quantity <= 0.0:
+                st.error("Quantity must be greater than 0.", icon="⚠️")
+                time.sleep(5)
+                st.rerun()
+            elif trans_type == "Buy" and cash < total_cost:
                 st.error(f"Insufficient cash available. Required: PKR {total_cost:.2f}, Available: PKR {cash:.2f}", icon="⚠️")
-                st.success("Please add cash or adjust the transaction.", icon="ℹ️")
                 time.sleep(5)
                 st.rerun()
             else:
                 try:
                     tracker.add_transaction(date, ticker, trans_type, quantity, price, fee)
-                    if trans_type == "Deposit":
-                        st.success("Cash has been added", icon="✅")
-                    else:
-                        st.success("Transaction has been added", icon="✅")
+                    st.success("Transaction has been added", icon="✅")
                     st.session_state.data_changed = True
                     time.sleep(5)
                     st.rerun()
@@ -47,16 +56,25 @@ def render_add_transaction(tracker):
         fee = 0.0
 
         if st.button("Add Transaction", key="add_trans_submit"):
-            try:
-                tracker.add_transaction(date, None, trans_type, amount, 0.0, fee)
-                st.success("Cash has been added" if trans_type == "Deposit" else "Transaction has been added", icon="✅")
-                st.session_state.data_changed = True
+            if cash <= 0.0 and trans_type == "Withdraw":
+                st.error("No cash available for withdrawal.", icon="⚠️")
                 time.sleep(5)
                 st.rerun()
-            except ValueError as e:
-                st.error(str(e), icon="⚠️")
+            elif amount <= 0.0:
+                st.error("Amount must be greater than 0.", icon="⚠️")
                 time.sleep(5)
                 st.rerun()
+            else:
+                try:
+                    tracker.add_transaction(date, None, trans_type, amount, 0.0, fee)
+                    st.success("Cash has been added" if trans_type == "Deposit" else "Cash has been withdrawn", icon="✅")
+                    st.session_state.data_changed = True
+                    time.sleep(5)
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e), icon="⚠️")
+                    time.sleep(5)
+                    st.rerun()
 
 def render_sample_distribution(tracker):
     st.subheader("Sample Distribution")
@@ -84,3 +102,4 @@ def render_sample_distribution(tracker):
                     temp_tracker.current_prices = tracker.current_prices
                     dist_df = temp_tracker.calculate_distribution(cash)
                     st.session_state.dist_df = dist_df
+                    st
