@@ -30,10 +30,10 @@ def main():
     portfolio_manager = PortfolioManager()
 
     # Handle login state
-    if not _manager.is_logged_in():
+    if not user_manager.is_logged_in():
         tabs = st.tabs(["Login", "Sign Up"])
         with tabs[0]:
-            _manager.login()
+            user_manager.login()
         with tabs[1]:
             user_manager.signup()
         st.info("Please log in or sign up to access your portfolios.")
@@ -50,18 +50,20 @@ def main():
         st.session_state.selected_portfolio = None
     if 'data_changed' not in st.session_state:
         st.session_state.data_changed = False
+    if 'force_rerun' not in st.session_state:
+        st.session_state.force_rerun = False
 
     # Portfolio creation
     st.sidebar.header("Portfolio Management")
     new_portfolio_name = st.sidebar.text_input("New Portfolio Name", key="new_portfolio_name")
     if st.sidebar.button("Create Portfolio", key="create_portfolio"):
-        tracker = PortfolioTracker()  # No username parameter
+        tracker = PortfolioTracker()
         if tracker:
             st.session_state.portfolios[new_portfolio_name] = tracker
             st.session_state.selected_portfolio = new_portfolio_name
             portfolio_manager.save_portfolio(new_portfolio_name, user_manager.get_current_user(), tracker)
             st.success(f"Portfolio '{new_portfolio_name}' created successfully!")
-            st.rerun()
+            st.session_state.force_rerun = True
 
     # Portfolio selection
     tracker = portfolio_manager.select_portfolio(user_manager.get_current_user())
@@ -79,26 +81,31 @@ def main():
     filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
     if filer_status != tracker.filer_status:
         tracker.update_filer_status(filer_status)
-        portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
         st.session_state.data_changed = True
 
     # Auto-save functionality
     if st.session_state.get('data_changed', False):
         portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
         st.session_state.data_changed = False
-        st.rerun()
+        st.session_state.force_rerun = True
 
     # Manual save button
     if st.sidebar.button("💾 Save Portfolio", key="save_portfolio"):
         portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
         st.sidebar.success("Portfolio saved successfully!")
+        st.session_state.force_rerun = True
 
     # Delete portfolio option
     if st.sidebar.button("🗑️ Delete Portfolio", key="delete_portfolio"):
         if portfolio_manager.delete_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user()):
             st.session_state.selected_portfolio = None
             st.session_state.portfolios = {}
-            st.rerun()
+            st.session_state.force_rerun = True
+
+    # Force rerun if needed
+    if st.session_state.get('force_rerun', False):
+        st.session_state.force_rerun = False
+        st.rerun()
 
     # Navigation
     st.sidebar.header("Navigation")
@@ -114,7 +121,7 @@ def main():
     st.sidebar.write(f"**Cash:** PKR {tracker.cash:,.2f}")
     st.sidebar.write(f"**Total Value:** PKR {tracker.get_total_portfolio_value():,.2f}")
 
-    # Call the appropriate tab function
+    # Call the appropriate tab function and pass portfolio_manager for saving
     if page == "Dashboard":
         render_dashboard(tracker)
     elif page == "Portfolio":
@@ -122,7 +129,7 @@ def main():
     elif page == "Distribution":
         render_distribution(tracker)
     elif page == "Cash":
-        render_cash(tracker)
+        render_cash(tracker, portfolio_manager, user_manager.get_current_user())
     elif page == "Stock Explorer":
         render_stock_explorer(tracker)
     elif page == "Notifications":
@@ -132,19 +139,19 @@ def main():
     elif page == "Current Prices":
         render_current_prices(tracker)
     elif page == "Add Transaction":
-        render_add_transaction(tracker)
-        render_sample_distribution(tracker)
+        render_add_transaction(tracker, portfolio_manager, user_manager.get_current_user())
     elif page == "Add Dividend":
-        render_add_dividend(tracker)
+        render_add_dividend(tracker, portfolio_manager, user_manager.get_current_user())
     elif page == "Broker Fees":
         render_broker_fees(tracker)
     elif page == "Guide":
         render_guide()
 
-    # Add a hidden trigger to detect changes and auto-save
+    # Final auto-save check
     if st.session_state.get('data_changed', False):
         portfolio_manager.save_portfolio(st.session_state.selected_portfolio, user_manager.get_current_user(), tracker)
         st.session_state.data_changed = False
+        st.session_state.force_rerun = True
         st.rerun()
 
 if __name__ == '__main__':
