@@ -39,6 +39,10 @@ def main():
         st.info("Please log in or sign up to access your portfolios.")
         return
 
+    # Show logout button in sidebar for logged-in users
+    st.sidebar.header("User")
+    user_manager.logout()
+
     # Initialize session state
     if 'portfolios' not in st.session_state:
         st.session_state.portfolios = {}
