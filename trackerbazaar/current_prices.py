@@ -2,8 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from trackerbazaar.tracker import PortfolioTracker
+from trackerbazaar.portfolios import PortfolioManager
 
 def render_current_prices(tracker):
+    portfolio_manager = PortfolioManager()
+    email = st.session_state.get('logged_in_user')
+    portfolio_name = st.session_state.get('selected_portfolio')
+
     st.header("Current Prices")
     prices_list = [{
         'Ticker': k,
@@ -68,5 +73,6 @@ def render_current_prices(tracker):
                     'timestamp': pd.to_datetime(row['Timestamp']).timestamp()
                 }
             tracker.current_prices = updated_prices
+            portfolio_manager.save_portfolio(portfolio_name, email, tracker)
             st.session_state.data_changed = True
             st.success("Prices updated successfully!")
