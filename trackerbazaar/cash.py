@@ -1,9 +1,16 @@
+# trackerbazaar/cash.py
 import sqlite3
 import pandas as pd
 import streamlit as st
 from datetime import date
 from trackerbazaar.data import DB_FILE, init_db
 
+def _table_has_column(table: str, column: str) -> bool:
+    with sqlite3.connect(DB_FILE) as conn:
+        cur = conn.cursor()
+        cur.execute(f"PRAGMA table_info({table})")
+        cols = [row[1] for row in cur.fetchall()]
+        return column in cols
 
 class CashUI:
     def __init__(self, user_email: str):
@@ -25,7 +32,9 @@ class CashUI:
             st.warning("Please log in to manage cash.")
             return
 
+        # Ensure schema & run migrations (adds cash.note if missing)
         init_db()
+
         portfolios = self._user_portfolios()
         if not portfolios:
             st.info("No portfolios yet. Create one in the **Portfolios** tab.")
@@ -51,11 +60,17 @@ class CashUI:
                 try:
                     with sqlite3.connect(DB_FILE) as conn:
                         cur = conn.cursor()
-                        cur.execute(
-                            """INSERT INTO cash (portfolio_id, date, amount, note)
-                               VALUES (?,?,?,?)""",
-                            (portfolio_id, str(cash_date), signed_amount, note),
-                        )
+                        # Insert depending on whether 'note' column exists (defensive)
+                        if _table_has_column("cash", "note"):
+                            cur.execute(
+                                "INSERT INTO cash (portfolio_id, date, amount, note) VALUES (?,?,?,?)",
+                                (portfolio_id, str(cash_date), signed_amount, note),
+                            )
+                        else:
+                            cur.execute(
+                                "INSERT INTO cash (portfolio_id, date, amount) VALUES (?,?,?)",
+                                (portfolio_id, str(cash_date), signed_amount),
+                            )
                         conn.commit()
                     st.success("Cash record saved.")
                     try:
@@ -65,14 +80,24 @@ class CashUI:
                 except Exception as e:
                     st.error(f"Failed to save cash record: {e}")
 
-        # List cash
-        with sqlite3.connect(DB_FILE) as conn:
-            df = pd.read_sql_query(
-                """SELECT date, amount, COALESCE(note,'') AS note
-                   FROM cash WHERE portfolio_id=? ORDER BY date DESC""",
-                conn,
-                params=(portfolio_id,),
-            )
+        # Read table (be tolerant to older schema)
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                df = pd.read_sql_query(
+                    "SELECT date, amount, COALESCE(note,'') AS note FROM cash WHERE portfolio_id=? ORDER BY date DESC",
+                    conn,
+                    params=(portfolio_id,),
+                )
+        except Exception:
+            # Fallback when 'note' column doesn't exist yet
+            with sqlite3.connect(DB_FILE) as conn:
+                df = pd.read_sql_query(
+                    "SELECT date, amount FROM cash WHERE portfolio_id=? ORDER BY date DESC",
+                    conn,
+                    params=(portfolio_id,),
+                )
+            df["note"] = ""
+
         st.subheader("History")
         if df.empty:
             st.info("No cash records yet.")
