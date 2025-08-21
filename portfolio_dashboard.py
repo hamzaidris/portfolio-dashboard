@@ -3,13 +3,20 @@ from trackerbazaar.users import UserManager
 from trackerbazaar.portfolios import PortfolioManager
 from trackerbazaar.tracker import initialize_tracker
 from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
+from trackerbazaar.add_dividend import render_add_dividend  # Placeholder
+from trackerbazaar.broker_fees import render_broker_fees  # Placeholder
 from trackerbazaar.cash import render_cash
-from trackerbazaar.portfolio import render_portfolio
+from trackerbazaar.current_prices import update_current_prices  # Utility, not a page
 from trackerbazaar.dashboard import render_dashboard
-from trackerbazaar.stock_explorer import render_stock_explorer
-from trackerbazaar.guide import render_guide
-from trackerbazaar.signup import render_signup
+from trackerbazaar.data import render_data  # Placeholder
 from trackerbazaar.distribution import render_distribution
+from trackerbazaar.guide import render_guide
+from trackerbazaar.notifications import render_notifications  # Placeholder
+from trackerbazaar.portfolio import render_portfolio
+from trackerbazaar.signup import render_signup
+from trackerbazaar.stock_explorer import render_stock_explorer
+from trackerbazaar.transactions import render_transactions  # Placeholder
+from trackerbazaar.tracker import PortfolioTracker  # Utility, not a page
 
 def main():
     st.set_page_config(layout="wide", page_title="Portfolio Dashboard", page_icon="📈")
@@ -70,17 +77,23 @@ def main():
         st.stop()
 
     initialize_tracker(tracker)
+    update_current_prices(tracker)  # Call utility function to update prices
 
     pages = {
         "Portfolio": render_portfolio,
         "Dashboard": render_dashboard,
         "Add Transaction": lambda t: [render_add_transaction(t), render_sample_distribution(t)],
+        "Add Dividend": render_add_dividend,
+        "Broker Fees": render_broker_fees,
         "Cash": render_cash,
-        "Stock Explorer": render_stock_explorer,
-        "Notifications": lambda t: st.write("Notifications page (under development)"),
+        "Data": render_data,
+        "Distribution": render_distribution,
         "Guide": render_guide,
+        "Notifications": render_notifications,
         "Signup": render_signup,
-        "Distribution": render_distribution
+        "Stock Explorer": render_stock_explorer,
+        "Transactions": render_transactions
+        # Note: Excluded utility modules (current_prices.py, tracker.py) from navigation
     }
     page = st.sidebar.selectbox("Navigate", list(pages.keys()), key="nav_page")
 
