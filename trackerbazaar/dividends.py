@@ -1,71 +1,40 @@
-# dividends.py
-import streamlit as st
-import pandas as pd
-from trackerbazaar.portfolios import PortfolioManager
+import sqlite3
+from datetime import datetime
 
-portfolio_manager = PortfolioManager()
+DB_FILE = "trackerbazaar_v2.db"  # ✅ new DB
 
-def show_dividends(selected_portfolio: str, user_email: str):
-    """Dividend Manager — record and view dividends for a portfolio."""
+def init_dividends_table():
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS dividends (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                portfolio_name TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                amount REAL NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
-    try:
-        tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
-    except Exception as e:
-        st.error(f"Error loading portfolio: {e}")
-        return
+def add_dividend(email, portfolio_name, ticker, amount):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO dividends (email, portfolio_name, ticker, amount, timestamp) VALUES (?,?,?,?,?)",
+            (email, portfolio_name, ticker, amount, datetime.now().isoformat())
+        )
+        conn.commit()
 
-    st.subheader(f"💰 Dividend Manager — {selected_portfolio}")
+def get_dividends(email, portfolio_name):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT ticker, amount, timestamp FROM dividends WHERE email=? AND portfolio_name=? ORDER BY id DESC",
+            (email, portfolio_name)
+        )
+        return c.fetchall()
 
-    # ---- Add Dividend Form ----
-    with st.form("add_dividend_form", clear_on_submit=True):
-        st.markdown("### ➕ Add Dividend")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            stock = st.text_input("Stock Symbol")
-        with col2:
-            amount = st.number_input("Dividend Amount (PKR)", min_value=0.0, step=0.01)
-        with col3:
-            date = st.date_input("Date")
-
-        submitted = st.form_submit_button("💾 Save Dividend")
-
-        if submitted:
-            try:
-                tracker.add_dividend({
-                    "stock": stock.upper(),
-                    "amount": amount,
-                    "date": str(date)
-                })
-                portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
-                st.success(f"Dividend added: {amount} PKR for {stock}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to add dividend: {e}")
-
-    st.divider()
-
-    # ---- Dividend History ----
-    st.subheader("📑 Dividend History")
-    if tracker.dividends:
-        div_df = pd.DataFrame(tracker.dividends)
-
-        div_df = div_df.rename(columns={
-            "stock": "Stock",
-            "amount": "Amount",
-            "date": "Date"
-        })
-
-        st.dataframe(div_df, use_container_width=True)
-
-        # ---- Total Dividends ----
-        total_div = div_df["Amount"].sum()
-        st.metric("Total Dividends (PKR)", f"{total_div:,.2f}")
-
-        # ---- Chart of Dividends per Stock ----
-        st.subheader("📊 Dividends by Stock")
-        chart_df = div_df.groupby("Stock")["Amount"].sum().reset_index()
-        st.bar_chart(chart_df.set_index("Stock"))
-
-    else:
-        st.info("No dividends recorded yet. Add one above ⬆️")
+# Initialize
+init_dividends_table()
