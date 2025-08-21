@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import json
-from datetime import datetime, date
+import datetime  # ✅ changed
 from trackerbazaar.tracker import PortfolioTracker
 
 class PortfolioManager:
@@ -55,7 +55,7 @@ class PortfolioManager:
                 tracker = PortfolioTracker()
                 data = json.loads(result[0])
                 tracker.transactions = [
-                    {**t, 'date': datetime.fromisoformat(t['date']) if isinstance(t['date'], str) else t['date']}
+                    {**t, 'date': datetime.datetime.fromisoformat(t['date']) if isinstance(t['date'], str) else t['date']}
                     for t in data.get('transactions', [])
                 ]
                 tracker.holdings = data.get('holdings', {})
@@ -68,11 +68,11 @@ class PortfolioManager:
                 tracker.target_investment = data.get('target_investment', 410000.0)
                 tracker.last_div_per_share = data.get('last_div_per_share', {})
                 tracker.cash_deposits = [
-                    {**d, 'date': datetime.fromisoformat(d['date']) if isinstance(d['date'], str) else d['date']}
+                    {**d, 'date': datetime.datetime.fromisoformat(d['date']) if isinstance(d['date'], str) else d['date']}
                     for d in data.get('cash_deposits', [])
                 ]
                 tracker.alerts = [
-                    {**a, 'date': datetime.fromisoformat(a['date']) if isinstance(a['date'], str) else a['date']}
+                    {**a, 'date': datetime.datetime.fromisoformat(a['date']) if isinstance(a['date'], str) else a['date']}
                     for a in data.get('alerts', [])
                 ]
                 tracker.filer_status = data.get('filer_status', 'Filer')
