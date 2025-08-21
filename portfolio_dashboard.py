@@ -44,6 +44,8 @@ def render_login():
         if submit:
             user_data = login_user(username, password)
             if user_data:
+                # Add the 'username' key to the user_data dictionary
+                user_data["username"] = username
                 st.session_state.authenticated = True
                 st.session_state.user_data = user_data
                 st.session_state.page = "dashboard"
