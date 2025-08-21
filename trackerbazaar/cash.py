@@ -1,9 +1,3 @@
-import streamlit as st
-import time
-from datetime import datetime
-from trackerbazaar.tracker import PortfolioTracker
-from trackerbazaar.portfolios import PortfolioManager
-
 def render_cash(tracker):
     portfolio_manager = PortfolioManager()
     email = st.session_state.get('logged_in_user')
@@ -12,12 +6,10 @@ def render_cash(tracker):
     st.header("Cash Management")
     st.write("Manage your cash balance and add new cash transactions.")
 
-    # Display current cash balance with fallback
-    cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
+    cash = getattr(tracker, 'cash', 0.0)
     st.subheader("Current Cash Balance")
     st.write(f"PKR {cash:.2f}")
 
-    # Add Cash Form
     st.subheader("Add Cash")
     with st.form(key="add_cash_form"):
         date = st.date_input("Date", value=datetime.now(), key="cash_date")
@@ -37,7 +29,6 @@ def render_cash(tracker):
                 time.sleep(5)
                 st.rerun()
 
-    # Withdraw Cash Form
     st.subheader("Withdraw Cash")
     with st.form(key="withdraw_cash_form"):
         date = st.date_input("Date", value=datetime.now(), key="withdraw_date")
