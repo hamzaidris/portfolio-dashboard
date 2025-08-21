@@ -1,10 +1,15 @@
 # trackerbazaar/__init__.py
 
-# Expose main classes to the package level
+"""
+TrackerBazaar package initializer
+"""
+
 from .tracker import PortfolioTracker
 from .portfolios import PortfolioManager
+from .current_prices import CurrentPrices
 
 __all__ = [
     "PortfolioTracker",
     "PortfolioManager",
+    "CurrentPrices",
 ]
