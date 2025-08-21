@@ -41,7 +41,6 @@ class PortfolioTracker:
 
     def add_transaction(self, date, ticker, trans_type, quantity, price, fee=0.0):
         """Add a transaction to the portfolio."""
-        import datetime
         if isinstance(date, int):
             date = excel_date_to_datetime(date)
         if not isinstance(date, (datetime.datetime, datetime.date)):
