@@ -1,15 +1,15 @@
 import sqlite3
 import json
-from .tracker import Tracker
+from trackerbazaar.tracker import Tracker
 
 
 class PortfolioManager:
-    def __init__(self, db_path="trackerbazaar.db"):
-        self.db_path = db_path
+    def __init__(self):
+        self.db_path = "trackerbazaar_v2.db"  # same new DB
         self._init_db()
 
     def _init_db(self):
-        """Ensure portfolios table exists with correct schema"""
+        """Create portfolios table if missing."""
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("""
@@ -33,29 +33,22 @@ class PortfolioManager:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute(
-                "REPLACE INTO portfolios(email, name, data) VALUES (?,?,?)",
+                "INSERT OR REPLACE INTO portfolios(email, name, data) VALUES (?,?,?)",
                 (email, name, tracker_data),
             )
             conn.commit()
 
-    def load_portfolio(self, name, email):
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute(
-                "SELECT data FROM portfolios WHERE email=? AND name=?",
-                (email, name),
-            )
-            row = c.fetchone()
-            if row:
-                data = json.loads(row[0])
-                return Tracker.from_dict(data)
-            return None
-
     def list_portfolios(self, email):
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
-            c.execute(
-                "SELECT name FROM portfolios WHERE email=? ORDER BY name",
-                (email,),
-            )
+            c.execute("SELECT name FROM portfolios WHERE email=? ORDER BY name", (email,))
             return [row[0] for row in c.fetchall()]
+
+    def load_portfolio(self, name, email):
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute("SELECT data FROM portfolios WHERE email=? AND name=?", (email, name))
+            row = c.fetchone()
+            if row:
+                return Tracker.from_dict(json.loads(row[0]))
+            return None
