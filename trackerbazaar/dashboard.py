@@ -1,34 +1,46 @@
-# trackerbazaar/dashboard.py
 import streamlit as st
-from trackerbazaar.tracker import PortfolioTracker   # ✅ fixed import
+import sqlite3
+from trackerbazaar.data import DB_FILE
 
-def run():
-    st.title("📊 Portfolio Dashboard")
+class PortfolioUI:
+    def __init__(self, user_email):
+        self.user_email = user_email
 
-    tracker = PortfolioTracker()
+    def show(self):
+        st.header("📂 Your Portfolios")
 
-    # List all portfolios
-    portfolios = tracker.list_portfolios()
-
-    if not portfolios:
-        st.info("No portfolios yet. Please add one from 'Add Transaction'.")
-        return
-
-    for pid, name in portfolios:
-        st.subheader(f"Portfolio: {name}")
+        if not self.user_email:
+            st.warning("⚠️ Please log in to see your portfolios.")
+            return
 
         try:
-            # Fetch portfolio summary (requires PortfolioTracker.get_portfolio_summary)
-            summary = tracker.get_portfolio_summary(pid)
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM portfolios WHERE owner_email=?", (self.user_email,))
+                portfolios = cursor.fetchall()
 
-            # Display summary in a nice layout
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Invested", f"{summary['invested']:,} PKR")
-            col2.metric("Current Value", f"{summary['current_value']:,} PKR")
-            col3.metric("Profit / Loss", f"{summary['pnl']:,} PKR")
-
-            st.write("### Holdings")
-            st.dataframe(summary["holdings"])
-
+            if portfolios:
+                for (name,) in portfolios:
+                    st.markdown(f"- **{name}**")
+            else:
+                st.info("No portfolios yet. Create one below 👇")
         except Exception as e:
-            st.error(f"Could not load summary for {name}: {e}")
+            st.error(f"Error loading portfolios: {e}")
+
+        # Add New Portfolio
+        with st.form("new_portfolio"):
+            portfolio_name = st.text_input("Portfolio Name")
+            submitted = st.form_submit_button("➕ Add Portfolio")
+            if submitted and portfolio_name:
+                try:
+                    with sqlite3.connect(DB_FILE) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO portfolios (name, owner_email) VALUES (?, ?)",
+                            (portfolio_name, self.user_email)
+                        )
+                        conn.commit()
+                    st.success(f"✅ Portfolio '{portfolio_name}' created.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error adding portfolio: {e}")
