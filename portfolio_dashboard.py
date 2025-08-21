@@ -9,11 +9,13 @@ from trackerbazaar.stock_explorer import render_stock_explorer
 from trackerbazaar.notifications import render_notifications
 from trackerbazaar.transactions import render_transactions
 from trackerbazaar.current_prices import render_current_prices
-from trackerbazaar.add_transaction import render_add_transaction
+from trackerbazaar.add_transaction import render_add_transaction, render_sample_distribution
 from trackerbazaar.add_dividend import render_add_dividend
 from trackerbazaar.broker_fees import render_broker_fees
 from trackerbazaar.guide import render_guide
 from trackerbazaar.tracker import PortfolioTracker, initialize_tracker
+from trackerbazaar.users import UserManager  # Included for potential future use
+from trackerbazaar.portfolios import PortfolioManager  # Included for potential use
 from datetime import datetime
 
 # Add parent directory to sys.path for package resolution
@@ -27,6 +29,7 @@ def main():
     st.title("📈 TrackerBazaar - Portfolio Dashboard")
     st.markdown("A portfolio management platform for tracking and optimizing your investments across stocks, mutual funds, and commodities. Stay ahead with real-time insights and analytics.")
 
+    # Initialize session state for tracker and other flags
     if 'tracker' not in st.session_state:
         st.session_state.tracker = PortfolioTracker()
         initialize_tracker(st.session_state.tracker)
@@ -43,6 +46,7 @@ def main():
     filer_status = st.sidebar.selectbox("Filer Status", ["Filer", "Non-Filer"], index=0 if tracker.filer_status == 'Filer' else 1)
     if filer_status != tracker.filer_status:
         tracker.update_filer_status(filer_status)
+        st.session_state.update_filer_status = True
 
     if st.session_state.get('update_filer_status', False) or st.session_state.get('update_allocations', False) or st.session_state.get('data_changed', False):
         st.session_state.update_filer_status = False
@@ -69,6 +73,7 @@ def main():
         render_current_prices(tracker)
     elif page == "Add Transaction":
         render_add_transaction(tracker)
+        render_sample_distribution(tracker)
     elif page == "Add Dividend":
         render_add_dividend(tracker)
     elif page == "Broker Fees":
