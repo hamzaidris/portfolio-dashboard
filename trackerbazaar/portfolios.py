@@ -1,6 +1,5 @@
 import sqlite3
 import json
-import os
 from .tracker import Tracker
 
 DB = "trackerbazaar.db"
