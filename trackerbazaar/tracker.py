@@ -84,7 +84,7 @@ class PortfolioTracker:
 
             # Generate alert
             self.alerts.append({
-                'date': datetime.datetime.now(),
+                'date': datetime.now(),
                 'message': f"{trans_type} of PKR {quantity:.2f} processed"
             })
             return
