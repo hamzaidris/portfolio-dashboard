@@ -6,7 +6,7 @@ from trackerbazaar.add_transaction import render_add_transaction
 from trackerbazaar.add_dividend import render_add_dividend  # Placeholder
 from trackerbazaar.broker_fees import render_broker_fees  # Placeholder
 from trackerbazaar.cash import render_cash
-from trackerbazaar.current_prices import current_prices  # Placeholder for data module
+# Removed import of current_prices
 from trackerbazaar.dashboard import render_dashboard
 from trackerbazaar.data import render_data  # Placeholder
 from trackerbazaar.distribution import render_distribution
