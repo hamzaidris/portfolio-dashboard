@@ -1,34 +1,33 @@
 # trackerbazaar/dashboard.py
-
 import streamlit as st
-import pandas as pd
-from trackerbazaar.tracker import PortfolioTracker   # ✅ correct import
+from trackerbazaar.portfolio_tracker import PortfolioTracker
 
-
-def dashboard_ui():
-    """Streamlit dashboard UI for portfolios."""
-    st.header("📊 Portfolio Dashboard")
+def run():
+    st.title("📊 Portfolio Dashboard")
 
     tracker = PortfolioTracker()
 
-    portfolios = tracker.get_all_portfolios()
+    # List all portfolios
+    portfolios = tracker.list_portfolios()
 
     if not portfolios:
-        st.info("No portfolios found. Please create one first.")
+        st.info("No portfolios yet. Please add one from 'Add Transaction'.")
         return
 
-    selected_portfolio = st.selectbox(
-        "Select a Portfolio", [p["name"] for p in portfolios]
-    )
+    for pid, name in portfolios:
+        st.subheader(f"Portfolio: {name}")
 
-    if selected_portfolio:
-        portfolio_data = tracker.get_portfolio_summary(selected_portfolio)
+        try:
+            # Fetch portfolio summary (you may need to extend PortfolioTracker with this)
+            summary = tracker.get_portfolio_summary(pid)
 
-        st.subheader(f"Summary for {selected_portfolio}")
-        st.metric("Total Value", f"{portfolio_data['total_value']:.2f}")
-        st.metric("Cash Balance", f"{portfolio_data['cash']:.2f}")
-        st.metric("Invested Amount", f"{portfolio_data['invested']:.2f}")
+            # Display summary in a nice layout
+            st.metric("Total Invested", f"{summary['invested']:,} PKR")
+            st.metric("Current Value", f"{summary['current_value']:,} PKR")
+            st.metric("Profit / Loss", f"{summary['pnl']:,} PKR")
 
-        st.subheader("Holdings")
-        holdings_df = pd.DataFrame(portfolio_data["holdings"])
-        st.dataframe(holdings_df)
+            st.write("### Holdings")
+            st.dataframe(summary["holdings"])
+
+        except Exception as e:
+            st.error(f"Could not load summary for {name}: {e}")
