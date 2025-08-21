@@ -1,9 +1,8 @@
 import sqlite3
 import json
-from tracker import Tracker  # adjust if path differs
+from .tracker import Tracker  # fixed import
 
 DB = "trackerbazaar.db"
-
 
 class PortfolioManager:
     def __init__(self):
