@@ -24,7 +24,7 @@ def render_add_transaction(tracker):
         if st.button("Add Transaction", key="add_trans_submit"):
             cash = getattr(tracker, 'cash', 0.0)  # Fallback to 0.0 if attribute missing
             if trans_type == "Buy" and cash < total_cost:
-                st.error("Insufficient cash available for this transaction.", icon="⚠️")
+                st.error(f"Insufficient cash available. Required: PKR {total_cost:.2f}, Available: PKR {cash:.2f}", icon="⚠️")
                 st.success("Please add cash or adjust the transaction.", icon="ℹ️")
                 time.sleep(5)
                 st.rerun()
@@ -61,7 +61,7 @@ def render_add_transaction(tracker):
 def render_sample_distribution(tracker):
     st.subheader("Sample Distribution")
     with st.form("distribute_cash_form"):
-        date = st.date_input("Date", value=datetime(2025, 8, 21, 11, 34))
+        date = st.date_input("Date", value=datetime(2025, 8, 21, 11, 38))
         cash = st.number_input("Cash to Add and Distribute (PKR)", min_value=0.0, step=100.0)
         sharia_only = st.checkbox("Distribute only to Sharia-compliant stocks", value=False)
         submit_calc = st.form_submit_button("Calculate Sample Distribution")
@@ -84,30 +84,4 @@ def render_sample_distribution(tracker):
                     temp_tracker.current_prices = tracker.current_prices
                     dist_df = temp_tracker.calculate_distribution(cash)
                     st.session_state.dist_df = dist_df
-                    st.dataframe(
-                        dist_df,
-                        column_config={
-                            "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
-                            "Price": st.column_config.NumberColumn(format="PKR %.2f"),
-                            "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
-                            "SST": st.column_config.NumberColumn(format="PKR %.2f"),
-                            "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
-                            "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
-                        },
-                        use_container_width=True
-                    )
-        else:
-            dist_df = tracker.calculate_distribution(cash)
-            st.session_state.dist_df = dist_df
-            st.dataframe(
-                dist_df,
-                column_config={
-                    "Distributed": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Price": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Fee": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "SST": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Net Invested": st.column_config.NumberColumn(format="PKR %.2f"),
-                    "Leftover": st.column_config.NumberColumn(format="PKR %.2f")
-                },
-                use_container_width=True
-            )
+                    st
