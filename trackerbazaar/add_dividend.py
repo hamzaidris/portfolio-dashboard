@@ -1,34 +1,38 @@
+# trackerbazaar/add_dividend.py
+
 import streamlit as st
 from trackerbazaar.portfolios import PortfolioManager
-from trackerbazaar.portfolio_tracker import PortfolioTracker  # ✅ fixed import
-from trackerbazaar.data import DB_FILE
 
 
-def add_dividend_ui(current_user):
-    st.subheader("💰 Add Dividend")
+def add_dividend_ui():
+    """Streamlit UI for adding dividends to a portfolio."""
+    st.header("💰 Add Dividend")
 
-    if not current_user:
-        st.warning("Please log in to add dividends.")
-        return
+    portfolio_manager = PortfolioManager()
 
-    pm = PortfolioManager()
-    portfolios = pm.list_portfolios(current_user)
+    with st.form("add_dividend_form"):
+        email = st.session_state.get("logged_in_user")
+        if not email:
+            st.error("⚠️ Please log in first.")
+            return
 
-    if not portfolios:
-        st.info("No portfolios found. Please create one first.")
-        return
+        portfolio_list = portfolio_manager.list_portfolios(email)
+        if not portfolio_list:
+            st.warning("You don’t have any portfolios yet. Create one first.")
+            return
 
-    selected_portfolio = st.selectbox("Select Portfolio", portfolios)
-    dividend_date = st.date_input("Dividend Date")
-    stock_symbol = st.text_input("Stock Symbol")
-    dividend_amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
+        portfolio_id = st.selectbox("Select Portfolio", [p[0] for p in portfolio_list])
+        date = st.date_input("Date")
+        ticker = st.text_input("Ticker Symbol")
+        amount = st.number_input("Dividend Amount", min_value=0.0, step=0.01)
 
-    if st.button("Add Dividend"):
-        tracker = pm.load_portfolio(selected_portfolio, current_user)
-        if tracker:
-            tracker.add_dividend(stock_symbol, dividend_amount, str(dividend_date))
-            pm.save_portfolio(selected_portfolio, current_user, tracker)
-            st.success(f"Dividend added for {stock_symbol} on {dividend_date}")
-            st.rerun()  # ✅ modern rerun API
-        else:
-            st.error("Failed to load portfolio.")
+        submitted = st.form_submit_button("Add Dividend")
+
+        if submitted:
+            try:
+                portfolio_manager.add_dividend(
+                    portfolio_id, str(date), ticker, amount
+                )
+                st.success("✅ Dividend added successfully!")
+            except Exception as e:
+                st.error(f"❌ Failed to add dividend: {e}")
