@@ -1,13 +1,12 @@
 # dashboard.py
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from trackerbazaar.portfolios import PortfolioManager
 
 portfolio_manager = PortfolioManager()
 
 def show_dashboard(selected_portfolio: str, user_email: str):
-    """Display portfolio dashboard with KPIs and charts."""
+    """Modern portfolio dashboard with KPIs and charts."""
 
     try:
         tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
@@ -15,41 +14,63 @@ def show_dashboard(selected_portfolio: str, user_email: str):
         st.error(f"Error loading portfolio: {e}")
         return
 
-    st.subheader(f"📊 Dashboard — {selected_portfolio}")
+    st.subheader(f"📊 Portfolio Dashboard — {selected_portfolio}")
+
+    if not tracker.holdings:
+        st.info("No holdings yet. Add transactions to see your dashboard.")
+        return
 
     # ---- KPIs ----
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Invested", f"PKR {tracker.total_invested:,.0f}")
-    with col2:
-        st.metric("Current Value", f"PKR {tracker.current_value:,.0f}")
-    with col3:
-        profit_loss = tracker.current_value - tracker.total_invested
-        st.metric(
-            "P/L",
-            f"PKR {profit_loss:,.0f}",
-            delta=f"{(profit_loss / tracker.total_invested * 100):.2f}%" if tracker.total_invested > 0 else "0%",
-        )
+    total_invested = tracker.get_total_invested()
+    current_value = tracker.get_current_value()
+    profit_loss = current_value - total_invested
+    cagr = tracker.calculate_cagr()
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("💸 Total Invested", f"PKR {total_invested:,.0f}")
+    col2.metric("📈 Current Value", f"PKR {current_value:,.0f}")
+    col3.metric("💹 P/L", f"PKR {profit_loss:,.0f}", 
+                delta=f"{(profit_loss/total_invested*100):.2f}%")
+    col4.metric("📊 CAGR", f"{cagr:.2f}%")
 
     st.divider()
 
     # ---- Holdings Table ----
-    if not tracker.holdings:
-        st.info("No holdings yet. Add transactions in the Transactions tab.")
-        return
-
+    st.subheader("📑 Current Holdings")
     df = pd.DataFrame(tracker.holdings)
     st.dataframe(df, use_container_width=True)
 
-    # ---- Chart: Portfolio Allocation ----
-    try:
-        fig = px.pie(
-            df,
-            names="ticker",
-            values="current_value",
-            title="Portfolio Allocation",
-            hole=0.4,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    except Exception as e:
-        st.warning(f"Could not generate allocation chart: {e}")
+    # ---- Charts ----
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Allocation by Stock")
+        alloc = df.groupby("stock")["current_value"].sum().reset_index()
+        st.bar_chart(alloc.set_index("stock"))
+
+    with col2:
+        st.subheader("Profit/Loss by Stock")
+        pl = df.groupby("stock")["profit_loss"].sum().reset_index()
+        st.bar_chart(pl.set_index("stock"))
+
+    # ---- Expandable Sections ----
+    with st.expander("📥 Transactions"):
+        if tracker.transactions:
+            tx_df = pd.DataFrame(tracker.transactions)
+            st.dataframe(tx_df, use_container_width=True)
+        else:
+            st.info("No transactions yet.")
+
+    with st.expander("💰 Dividends"):
+        if tracker.dividends:
+            div_df = pd.DataFrame(tracker.dividends)
+            st.dataframe(div_df, use_container_width=True)
+        else:
+            st.info("No dividends yet.")
+
+    with st.expander("🏦 Cash Ledger"):
+        if tracker.cash_ledger:
+            cash_df = pd.DataFrame(tracker.cash_ledger)
+            st.dataframe(cash_df, use_container_width=True)
+        else:
+            st.info("No cash transactions recorded.")
