@@ -6,7 +6,7 @@ from trackerbazaar.portfolios import PortfolioManager
 portfolio_manager = PortfolioManager()
 
 def show_transactions(selected_portfolio: str, user_email: str):
-    """Trade Manager for recording and viewing portfolio transactions."""
+    """Transaction history with modern UI"""
 
     try:
         tracker = portfolio_manager.load_portfolio(selected_portfolio, user_email)
@@ -14,69 +14,44 @@ def show_transactions(selected_portfolio: str, user_email: str):
         st.error(f"Error loading portfolio: {e}")
         return
 
-    st.subheader(f"💹 Trade Manager — {selected_portfolio}")
+    st.title("🧾 Transactions")
 
-    # ---- Add Transaction Form ----
-    with st.form("add_transaction_form", clear_on_submit=True):
-        st.markdown("### ➕ Add Transaction")
+    if not tracker.transactions:
+        st.info("No transactions yet. Add buy/sell records to see history here.")
+        return
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            stock = st.text_input("Stock Symbol")
-        with col2:
-            tx_type = st.selectbox("Transaction Type", ["Buy", "Sell"])
-        with col3:
-            quantity = st.number_input("Quantity", min_value=1, step=1)
+    # ---- Convert to DataFrame ----
+    tx_df = pd.DataFrame(tracker.transactions).rename(columns={
+        "date": "Date",
+        "symbol": "Symbol",
+        "type": "Type",
+        "shares": "Shares",
+        "price": "Price",
+        "fees": "Brokerage Fee",
+        "total": "Total Amount"
+    })
 
-        col4, col5, col6 = st.columns(3)
-        with col4:
-            price = st.number_input("Price per Share (PKR)", min_value=0.0, step=0.01)
-        with col5:
-            fee = st.number_input("Brokerage Fee (PKR)", min_value=0.0, step=0.01)
-        with col6:
-            date = st.date_input("Date")
+    # ---- Sorting ----
+    tx_df["Date"] = pd.to_datetime(tx_df["Date"])
+    tx_df = tx_df.sort_values("Date", ascending=False)
 
-        submitted = st.form_submit_button("💾 Save Transaction")
+    # ---- Summary ----
+    total_buys = tx_df.loc[tx_df["Type"] == "buy", "Total Amount"].sum()
+    total_sells = tx_df.loc[tx_df["Type"] == "sell", "Total Amount"].sum()
+    net_cashflow = total_sells - total_buys
 
-        if submitted:
-            try:
-                tracker.add_transaction({
-                    "stock": stock.upper(),
-                    "type": tx_type,
-                    "quantity": quantity,
-                    "price": price,
-                    "fee": fee,
-                    "date": str(date)
-                })
-                portfolio_manager.save_portfolio(selected_portfolio, user_email, tracker)
-                st.success(f"Transaction added: {tx_type} {quantity} {stock} @ {price}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to add transaction: {e}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📥 Total Buys", f"{total_buys:,.2f} PKR")
+    col2.metric("📤 Total Sells", f"{total_sells:,.2f} PKR")
+    col3.metric("💸 Net Cashflow", f"{net_cashflow:,.2f} PKR")
 
     st.divider()
 
-    # ---- Transaction History ----
+    # ---- Table ----
     st.subheader("📑 Transaction History")
-    if tracker.transactions:
-        tx_df = pd.DataFrame(tracker.transactions)
+    st.dataframe(tx_df, use_container_width=True)
 
-        # Clean column names
-        tx_df = tx_df.rename(columns={
-            "stock": "Stock",
-            "type": "Type",
-            "quantity": "Qty",
-            "price": "Price",
-            "fee": "Fee",
-            "date": "Date"
-        })
-
-        st.dataframe(tx_df, use_container_width=True)
-
-        # ---- Chart of Buys vs Sells ----
-        st.subheader("📊 Buy vs Sell Volume")
-        chart_df = tx_df.groupby("Type")["Qty"].sum().reset_index()
-        st.bar_chart(chart_df.set_index("Type"))
-
-    else:
-        st.info("No transactions yet. Add one above ⬆️")
+    # ---- Chart ----
+    st.subheader("📊 Buy vs Sell Trend")
+    trend_df = tx_df.groupby(["Date", "Type"])["Total Amount"].sum().unstack(fill_value=0)
+    st.line_chart(trend_df)
